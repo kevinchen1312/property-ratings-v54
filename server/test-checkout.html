@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Stripe Checkout</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .container { background: #f5f5f5; padding: 20px; border-radius: 10px; }
+        button { background: #007cba; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #005a87; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .loading { color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Stripe Checkout</h1>
+        <p>This will test your Stripe checkout system running on localhost:3001</p>
+        
+        <button onclick="testCheckout()">Create Test Checkout Session</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testCheckout() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="loading">🔄 Creating checkout session...</div>';
+            
+            const testData = {
+                propertyIds: ['364607cd-69fb-4e8a-9b20-4ff4ce6758e7'],
+                email: 'test@example.com',
+                customerName: 'Test Customer'
+            };
+
+            try {
+                const response = await fetch('http://localhost:3001/create-checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h3>✅ SUCCESS! Checkout Session Created!</h3>
+                            <p><strong>💰 Total Amount:</strong> $${result.total_amount}</p>
+                            <p><strong>📊 Property Count:</strong> ${result.property_count}</p>
+                            <p><strong>🆔 Session ID:</strong> ${result.session_id}</p>
+                            <p><strong>🔗 Checkout URL:</strong></p>
+                            <p><a href="${result.checkout_url}" target="_blank" style="color: #007cba; word-break: break-all;">${result.checkout_url}</a></p>
+                            <hr>
+                            <p><strong>🎯 Next Steps:</strong></p>
+                            <ol>
+                                <li>Click the checkout URL above</li>
+                                <li>Use test card: <code>4242 4242 4242 4242</code></li>
+                                <li>Use any future date and any CVC</li>
+                                <li>Complete the payment to test the full flow!</li>
+                            </ol>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h3>❌ Checkout Failed</h3>
+                            <p><strong>Error:</strong> ${result.error}</p>
+                            ${result.details ? `<p><strong>Details:</strong> ${result.details}</p>` : ''}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Connection Error</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>Make sure your server is running on port 3001</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
