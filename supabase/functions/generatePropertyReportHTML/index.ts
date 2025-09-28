@@ -115,7 +115,7 @@ serve(async (req) => {
             const weeklyGrouped = weeklyData.reduce((acc: any, item: any) => {
                 const weekKey = item.week_start;
                 if (!acc[weekKey]) {
-                    acc[weekKey] = { week_start: weekKey, noise: null, friendliness: null, cleanliness: null };
+                    acc[weekKey] = { week_start: weekKey, noise: null, safety: null, cleanliness: null };
                 }
                 acc[weekKey][item.attribute] = { avg_rating: item.avg_rating, rating_count: item.rating_count };
                 return acc;
@@ -131,7 +131,7 @@ serve(async (req) => {
                         <tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;">
                             <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Week</th>
                             <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Noise</th>
-                            <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Friendliness</th>
+                            <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Safety</th>
                             <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Cleanliness</th>
                         </tr>
                     </thead>
@@ -145,7 +145,7 @@ serve(async (req) => {
                                     ${week.noise ? `${week.noise.avg_rating} ⭐<br><small>(${week.noise.rating_count})</small>` : '-'}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
-                                    ${week.friendliness ? `${week.friendliness.avg_rating} ⭐<br><small>(${week.friendliness.rating_count})</small>` : '-'}
+                                    ${week.safety ? `${week.safety.avg_rating} ⭐<br><small>(${week.safety.rating_count})</small>` : '-'}
                                 </td>
                                 <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
                                     ${week.cleanliness ? `${week.cleanliness.avg_rating} ⭐<br><small>(${week.cleanliness.rating_count})</small>` : '-'}

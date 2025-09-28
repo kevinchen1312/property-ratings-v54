@@ -4,7 +4,7 @@ import { Alert } from 'react-native';
 export interface RatingSubmission {
   propertyId: string;
   noise: number;
-  friendliness: number;
+  safety: number;
   cleanliness: number;
   userLat: number;
   userLng: number;
@@ -40,25 +40,67 @@ export const checkDailyRatingLimit = async (propertyId: string): Promise<boolean
 };
 
 /**
+ * Check if user has rated this property within the last hour (any attribute)
+ * Returns both the rate limit status and the timestamp of the last rating
+ */
+export const checkHourlyRateLimit = async (propertyId: string): Promise<{
+  isRateLimited: boolean;
+  lastRatingTime?: string;
+}> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    return { isRateLimited: false };
+  }
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  
+  const { data, error } = await supabase
+    .from('rating')
+    .select('id, created_at')
+    .eq('user_id', user.id)
+    .eq('property_id', propertyId)
+    .gte('created_at', oneHourAgo)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('Error checking hourly rate limit:', error);
+    return { isRateLimited: false };
+  }
+
+  const hasRecentRating = data && data.length > 0;
+  return {
+    isRateLimited: hasRecentRating,
+    lastRatingTime: hasRecentRating ? data[0].created_at : undefined
+  };
+};
+
+/**
  * Submit ratings for a property (only non-zero ratings)
  * Handles proximity validation and duplicate rating errors with user-friendly messages
  */
 export const submitRatings = async (submission: RatingSubmission): Promise<void> => {
+  console.log('🔍 Starting rating submission...', submission);
+  
   const { data: { user } } = await supabase.auth.getUser();
   
   if (!user) {
+    console.error('❌ No user found');
     throw new Error('User not authenticated');
   }
+  
+  console.log('✅ User authenticated:', user.id);
 
-  // Check if user has already rated this property today
-  const hasRatedToday = await checkDailyRatingLimit(submission.propertyId);
-  if (hasRatedToday) {
+  // Check if user has rated this property within the last hour
+  const rateLimitCheck = await checkHourlyRateLimit(submission.propertyId);
+  if (rateLimitCheck.isRateLimited) {
     Alert.alert(
-      'Already Rated Today',
-      'You have already rated this property today. You can only rate each property once per day.',
+      'Rate Limit Reached',
+      'You can only rate each property once per hour. Please wait before submitting another rating for this property.',
       [{ text: 'OK' }]
     );
-    throw new Error('Already rated today');
+    throw new Error('Property rate limited');
   }
 
   // Prepare rating records - only include non-zero ratings
@@ -75,12 +117,12 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
     });
   }
   
-  if (submission.friendliness > 0) {
+  if (submission.safety > 0) {
     ratings.push({
       user_id: user.id,
       property_id: submission.propertyId,
-      attribute: 'friendliness',
-      stars: submission.friendliness,
+      attribute: 'safety',
+      stars: submission.safety,
       user_lat: submission.userLat,
       user_lng: submission.userLng,
     });
@@ -107,18 +149,28 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
     throw new Error('No ratings provided');
   }
 
-  const { error } = await supabase
+  console.log('📝 Attempting to insert ratings:', ratings);
+  
+  const { data, error } = await supabase
     .from('rating')
-    .insert(ratings);
+    .insert(ratings)
+    .select();
+
+  console.log('📊 Insert result:', { data, error });
 
   if (error) {
+    console.error('❌ Database error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('Error details:', error.details);
+    
     // Handle specific database constraint errors with user-friendly messages
     
     // Proximity validation error (from trigger)
-    if (error.message.includes('within 2000 meters')) {
+    if (error.message.includes('within 200 meters')) {
       Alert.alert(
         'Too Far Away',
-        'You must be within 2000 meters (2km) of the property to submit a rating. Please get closer and try again.',
+        'You must be within 200 meters of the property to submit a rating. Please get closer and try again.',
         [{ text: 'OK' }]
       );
       throw new Error('Not within required proximity');

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { jsPDF } from 'https://esm.sh/jspdf@2.5.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,8 +14,8 @@ serve(async (req) => {
 
   try {
     const supabaseClient = createClient(
-      Deno.env.get('PROJECT_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     const { propertyId, userEmail } = await req.json()
@@ -27,6 +28,32 @@ serve(async (req) => {
     }
 
     console.log(`Generating PDF report for property: ${propertyId}, email: ${userEmail}`)
+
+    // Nuclear option: replace ALL emojis and special characters that could cause encoding issues
+    const cleanText = (text) => {
+      if (!text) return text;
+      return String(text)
+        // Replace star emojis specifically
+        .replace(/⭐/g, 'star')
+        .replace(/★/g, 'star') 
+        .replace(/☆/g, 'star')
+        .replace(/✨/g, 'sparkle')
+        // Remove ALL other emojis and special Unicode characters
+        .replace(/[\u{1F600}-\u{1F64F}]/gu, '')  // Emoticons
+        .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')  // Misc Symbols and Pictographs
+        .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')  // Transport and Map
+        .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '')  // Regional indicators
+        .replace(/[\u{2600}-\u{26FF}]/gu, '')    // Misc symbols
+        .replace(/[\u{2700}-\u{27BF}]/gu, '')    // Dingbats
+        .replace(/[\u{FE00}-\u{FE0F}]/gu, '')    // Variation selectors
+        .replace(/[\u{1F900}-\u{1F9FF}]/gu, '')  // Supplemental Symbols
+        .replace(/[\u{1FA70}-\u{1FAFF}]/gu, '')  // Extended symbols
+        // Remove any remaining high Unicode characters that might cause issues
+        .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
+        // Keep only basic ASCII and common extended characters
+        .replace(/[^\x00-\x7F\u00A0-\u00FF\u0100-\u017F\u0180-\u024F]/g, '')
+        .trim();
+    };
 
     // Get property information
     const { data: propertyData, error: propertyError } = await supabaseClient
@@ -46,6 +73,8 @@ serve(async (req) => {
     const { data: overallData } = await supabaseClient.rpc('get_overall_averages', {
       property_id_param: propertyId
     })
+    
+    console.log('Raw overall data:', JSON.stringify(overallData))
 
     const { data: weeklyData } = await supabaseClient.rpc('get_weekly_averages', {
       property_id_param: propertyId
@@ -59,159 +88,201 @@ serve(async (req) => {
       property_id_param: propertyId
     })
 
-    // Create PDF-ready HTML content
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Property Rating Report - ${propertyData.name}</title>
-    <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            padding: 40px; 
-            line-height: 1.6; 
-            color: #333;
-            background: white;
-        }
-        .header { 
-            text-align: center;
-            border-bottom: 3px solid #007AFF; 
-            padding-bottom: 30px; 
-            margin-bottom: 40px; 
-        }
-        .header h1 {
-            color: #007AFF;
-            font-size: 28px;
-            margin: 0 0 10px 0;
-        }
-        .property-info { 
-            background: #f8f9fa; 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin-bottom: 40px;
-            border-left: 5px solid #007AFF;
-        }
-        .property-info h2 {
-            margin-top: 0;
-            color: #007AFF;
-        }
-        .section { 
-            margin-bottom: 40px; 
-            page-break-inside: avoid;
-        }
-        .section h2 { 
-            color: #007AFF; 
-            border-bottom: 2px solid #e9ecef; 
-            padding-bottom: 10px;
-            font-size: 20px;
-        }
-        .rating-grid { 
-            display: grid; 
-            grid-template-columns: repeat(3, 1fr); 
-            gap: 20px; 
-            margin: 25px 0;
-        }
-        .rating-card { 
-            background: white; 
-            border: 2px solid #e9ecef; 
-            padding: 20px; 
-            border-radius: 12px; 
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .rating-card h3 {
-            margin: 0 0 10px 0;
-            color: #495057;
-            text-transform: capitalize;
-        }
-        .rating-value { 
-            font-size: 28px; 
-            font-weight: bold; 
-            color: #007AFF;
-            margin: 10px 0;
-        }
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 25px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        th, td { 
-            padding: 15px; 
-            text-align: left; 
-            border: 1px solid #dee2e6;
-        }
-        th { 
-            background-color: #007AFF; 
-            color: white;
-            font-weight: 600;
-            text-align: center;
-        }
-        td {
-            text-align: center;
-        }
-        tr:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-        .footer {
-            margin-top: 50px;
-            text-align: center;
-            color: #6c757d;
-            font-size: 12px;
-            border-top: 1px solid #e9ecef;
-            padding-top: 20px;
-        }
-        @page { margin: 0.75in; }
-        @media print {
-            .section { page-break-inside: avoid; }
-            table { page-break-inside: avoid; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🏠 Property Rating Report</h1>
-        <p style="font-size: 14px; color: #6c757d; margin: 0;">
-            Generated on ${new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            })} at ${new Date().toLocaleTimeString()}
-        </p>
-    </div>
+    console.log('Raw rating log data:', JSON.stringify(ratingLog, null, 2));
+    
+    // Log each rating entry to see what fields are available
+    if (ratingLog && ratingLog.length > 0) {
+      console.log('First rating entry keys:', Object.keys(ratingLog[0]));
+      console.log('First rating entry:', JSON.stringify(ratingLog[0], null, 2));
+    }
 
-    <div class="property-info">
-        <h2>📍 Property Information</h2>
-        <p><strong>Name:</strong> ${propertyData.name}</p>
-        <p><strong>Address:</strong> ${propertyData.address}</p>
-        <p><strong>Coordinates:</strong> ${propertyData.lat.toFixed(6)}, ${propertyData.lng.toFixed(6)}</p>
-    </div>
+    // Clean ALL data aggressively to prevent any emojis from reaching jsPDF
+    if (propertyData) {
+      propertyData.name = cleanText(propertyData.name);
+      propertyData.address = cleanText(propertyData.address);
+    }
+    
+    if (overallData) {
+      overallData.forEach(item => {
+        if (item.attribute) item.attribute = cleanText(item.attribute);
+      });
+    }
+    
+    if (weeklyData) {
+      weeklyData.forEach(item => {
+        if (item.attribute) item.attribute = cleanText(item.attribute);
+      });
+    }
+    
+    if (ratingLog) {
+      ratingLog.forEach(item => {
+        if (item.attribute) item.attribute = cleanText(item.attribute);
+      });
+    }
 
-    <div class="section">
-        <h2>⭐ Overall Rating Summary</h2>
-        <div class="rating-grid">
-            ${overallData && overallData.length > 0 ? overallData.map((rating: any) => `
-                <div class="rating-card">
-                    <h3>${rating.attribute}</h3>
-                    <div class="rating-value">${rating.avg_rating} ⭐</div>
-                    <p style="margin: 0; color: #6c757d;">${rating.rating_count} total ratings</p>
-                </div>
-            `).join('') : '<p style="text-align: center; color: #6c757d; font-style: italic;">No ratings available for this property</p>'}
-        </div>
-    </div>
+    // Helper function to remove emojis from text for PDF compatibility
+    const removeEmojis = (text: string): string => {
+      if (!text) return '';
+      return text
+        // Remove all emoji ranges
+        .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // Emoticons
+        .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // Misc Symbols and Pictographs
+        .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // Transport and Map
+        .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // Regional indicators
+        .replace(/[\u{2600}-\u{26FF}]/gu, '')   // Misc symbols (includes 🏠)
+        .replace(/[\u{2700}-\u{27BF}]/gu, '')   // Dingbats
+        .replace(/[\u{FE00}-\u{FE0F}]/gu, '')   // Variation selectors
+        .replace(/[\u{1F900}-\u{1F9FF}]/gu, '') // Supplemental Symbols and Pictographs
+        .replace(/[\u{1FA70}-\u{1FAFF}]/gu, '') // Symbols and Pictographs Extended-A
+        .replace(/[\u{E000}-\u{F8FF}]/gu, '')   // Private use area
+        .replace(/⭐/gu, '')                     // Star emoji specifically
+        .replace(/★/gu, '')                     // Black star
+        .replace(/☆/gu, '')                     // White star
+        .replace(/✨/gu, '')                     // Sparkles
+        .trim();
+    };
 
-    <div class="section">
-        <h2>📈 Weekly Trends (Last 8 Weeks)</h2>
-        ${weeklyData && weeklyData.length > 0 ? (() => {
+    // Calculate averages manually from raw data (like your existing script)
+    const allRatings = ratingLog || [];
+    const overallDataCalculated: any[] = [];
+    const attributes = ['noise', 'safety', 'cleanliness'];
+    
+    attributes.forEach(attr => {
+      const attrRatings = allRatings.filter((r: any) => r.attribute === attr);
+      if (attrRatings.length > 0) {
+        const sum = attrRatings.reduce((total: number, r: any) => total + r.stars, 0);
+        const avg = sum / attrRatings.length;
+        overallDataCalculated.push({
+          attribute: cleanText(attr),
+          avg_rating: Math.round(avg * 100) / 100,
+          rating_count: attrRatings.length
+        });
+      }
+    });
+
+    // Generate PDF using jsPDF (your existing implementation)
+    console.log('Creating PDF document using jsPDF...');
+    console.log('Property name (raw):', propertyData.name);
+    console.log('Property name (cleaned):', removeEmojis(propertyData.name));
+    const doc = new jsPDF();
+    
+    let yPosition = 20;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+
+    // Helper function to check if we need a new page
+    const checkPageBreak = (spaceNeeded: number = 20) => {
+      if (yPosition + spaceNeeded > 270) {
+        doc.addPage();
+        yPosition = 20;
+      }
+    };
+
+    // Title
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 122, 255);
+    doc.text('Property Rating Report', margin, yPosition);
+    yPosition += 15;
+
+    // Generation date
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(108, 117, 125);
+    const now = new Date();
+    doc.text(`Generated on ${now.toLocaleDateString()} at ${now.toLocaleTimeString()}`, margin, yPosition);
+    yPosition += 20;
+
+    // Property Information Section
+    checkPageBreak(40);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 122, 255);
+    doc.text('Property Information', margin, yPosition);
+    yPosition += 10;
+
+    // Property details box
+    doc.setDrawColor(0, 122, 255);
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(margin, yPosition, contentWidth, 25, 3, 3, 'FD');
+    
+    yPosition += 8;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(33, 37, 41);
+    doc.text(`Name: ${cleanText(propertyData.name)}`, margin + 5, yPosition);
+    yPosition += 6;
+    doc.text(`Address: ${cleanText(propertyData.address)}`, margin + 5, yPosition);
+    yPosition += 6;
+    doc.text(`Coordinates: ${propertyData.lat.toFixed(6)}, ${propertyData.lng.toFixed(6)}`, margin + 5, yPosition);
+    yPosition += 20;
+
+    // Overall Rating Summary
+    checkPageBreak(60);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 122, 255);
+    doc.text('Overall Rating Summary', margin, yPosition);
+    yPosition += 15;
+
+    if (overallDataCalculated.length > 0) {
+      const cardWidth = (contentWidth - 20) / 3;
+      let xPos = margin;
+      
+      overallDataCalculated.forEach((rating: any, index: number) => {
+        // Rating card
+        doc.setDrawColor(233, 236, 239);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(xPos, yPosition, cardWidth, 30, 2, 2, 'FD');
+        
+        // Attribute name
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(73, 80, 87);
+        const attrText = cleanText(rating.attribute.charAt(0).toUpperCase() + rating.attribute.slice(1));
+        doc.text(attrText, xPos + cardWidth/2, yPosition + 8, { align: 'center' });
+        
+        // Rating value
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 122, 255);
+        doc.text(`${rating.avg_rating} stars`, xPos + cardWidth/2, yPosition + 18, { align: 'center' });
+        
+        // Rating count
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(108, 117, 125);
+        doc.text(`${rating.rating_count} ratings`, xPos + cardWidth/2, yPosition + 25, { align: 'center' });
+        
+        xPos += cardWidth + 10;
+      });
+      yPosition += 40;
+    } else {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(108, 117, 125);
+      doc.text('No ratings available for this property', margin, yPosition);
+      yPosition += 20;
+    }
+
+    // Weekly Trends Table
+    checkPageBreak(80);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 122, 255);
+    doc.text('Weekly Trends (Last 8 Weeks)', margin, yPosition);
+    yPosition += 15;
+
+    if (weeklyData && weeklyData.length > 0) {
+      // Group weekly data
             const weeklyGrouped = weeklyData.reduce((acc: any, item: any) => {
                 const weekKey = item.week_start;
                 if (!acc[weekKey]) {
-                    acc[weekKey] = { week_start: weekKey, noise: null, friendliness: null, cleanliness: null };
+                    acc[weekKey] = { week_start: weekKey, noise: null, safety: null, cleanliness: null };
                 }
-                acc[weekKey][item.attribute] = { avg_rating: item.avg_rating, rating_count: item.rating_count };
+        const cleanAttribute = cleanText(item.attribute);
+        acc[weekKey][cleanAttribute] = { avg_rating: item.avg_rating, rating_count: item.rating_count };
                 return acc;
             }, {});
             
@@ -219,124 +290,106 @@ serve(async (req) => {
                 new Date(b.week_start).getTime() - new Date(a.week_start).getTime()
             );
             
-            return `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Week Starting</th>
-                            <th>Noise</th>
-                            <th>Friendliness</th>
-                            <th>Cleanliness</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${weeks.map((week: any) => `
-                            <tr>
-                                <td style="text-align: left; font-weight: 500;">
-                                    ${new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </td>
-                                <td>${week.noise ? `${week.noise.avg_rating} ⭐` : '-'}</td>
-                                <td>${week.friendliness ? `${week.friendliness.avg_rating} ⭐` : '-'}</td>
-                                <td>${week.cleanliness ? `${week.cleanliness.avg_rating} ⭐` : '-'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        })() : '<p style="text-align: center; color: #6c757d; font-style: italic;">No weekly trend data available</p>'}
-    </div>
-
-    <div class="footer">
-        <p>This report was generated automatically by the Property Ratings System.</p>
-        <p>Report ID: ${propertyId} | Generated: ${new Date().toISOString()}</p>
-    </div>
-</body>
-</html>
-    `
-
-    // Convert HTML to PDF using htmlcsstoimage.com API (they have PDF endpoint)
-    const htmlCssToImageApiKey = Deno.env.get('HTMLCSS_API_KEY')
-    
-    if (!htmlCssToImageApiKey) {
-      // Fallback: Save HTML and return preview URL
-      const fileName = `property-report-${propertyData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.html`
+      // Table header
+      const colWidth = contentWidth / 4;
+      doc.setFillColor(0, 122, 255);
+      doc.setTextColor(255, 255, 255);
+      doc.rect(margin, yPosition, contentWidth, 8, 'F');
       
-      const { data: uploadData, error: uploadError } = await supabaseClient.storage
-        .from('reports')
-        .upload(fileName, htmlContent, {
-          contentType: 'text/html',
-          upsert: false
-        })
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Week Starting', margin + 2, yPosition + 5);
+      doc.text('Noise', margin + colWidth + 2, yPosition + 5);
+      doc.text('Safety', margin + colWidth * 2 + 2, yPosition + 5);
+      doc.text('Cleanliness', margin + colWidth * 3 + 2, yPosition + 5);
+      yPosition += 8;
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError)
-        return new Response(
-          JSON.stringify({ error: 'Failed to generate report' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+      // Table rows
+      weeks.slice(0, 10).forEach((week: any, index: number) => {
+        checkPageBreak(8);
+        
+        // Alternating row colors
+        if (index % 2 === 0) {
+          doc.setFillColor(248, 249, 250);
+          doc.rect(margin, yPosition, contentWidth, 6, 'F');
+        }
+        
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(33, 37, 41);
+        
+        const weekDate = new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        doc.text(weekDate, margin + 2, yPosition + 4);
+        doc.text(week.noise ? `${week.noise.avg_rating}` : '-', margin + colWidth + 2, yPosition + 4);
+        doc.text(week.safety ? `${week.safety.avg_rating}` : '-', margin + colWidth * 2 + 2, yPosition + 4);
+        doc.text(week.cleanliness ? `${week.cleanliness.avg_rating}` : '-', margin + colWidth * 3 + 2, yPosition + 4);
+        
+        yPosition += 6;
+      });
+      yPosition += 10;
+    } else {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(108, 117, 125);
+      doc.text('No weekly trend data available', margin, yPosition);
+      yPosition += 20;
+    }
+
+    // Rating Activity Log
+    checkPageBreak(40);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 122, 255);
+    doc.text('Recent Rating Activity', margin, yPosition);
+    yPosition += 15;
+
+    if (ratingLog && ratingLog.length > 0) {
+      const recentRatings = (ratingLog as any[]).slice(0, 20); // Show last 20 ratings
+      for (const rating of recentRatings) {
+        if (yPosition < 50) break; // Stop if we run out of space
+        
+        checkPageBreak(5);
+        const date = new Date(rating.created_at);
+        const logDate = date.toLocaleDateString();
+        // Handle both user_id and user_hash fields depending on which function is deployed
+        const userHash = rating.user_hash || (rating.user_id ? rating.user_id.toString().substring(0, 8) : 'unknown');
+        
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(33, 37, 41);
+        doc.text(`${logDate} - ${cleanText(rating.attribute)}: ${rating.stars} stars (User: ${userHash})`, margin, yPosition);
+        yPosition += 4;
       }
-
-      const { data: signedUrlData } = await supabaseClient.storage
-        .from('reports')
-        .createSignedUrl(fileName, 24 * 60 * 60) // 24 hours
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Report generated (HTML format - PDF service not configured)',
-          property: propertyData.name,
-          userEmail: userEmail,
-          htmlUrl: signedUrlData?.signedUrl,
-          note: 'To enable PDF generation and email delivery, configure HTMLCSS_API_KEY and RESEND_API_KEY secrets'
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      yPosition += 15;
+    } else {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(108, 117, 125);
+      doc.text('No rating history available', margin, yPosition);
+      yPosition += 20;
     }
 
-    // Generate PDF using htmlcsstoimage.com
-    console.log('Converting HTML to PDF...')
+    // Footer
+    checkPageBreak(20);
+    doc.setDrawColor(233, 236, 239);
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 10;
     
-    const pdfResponse = await fetch('https://hcti.io/v1/image', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${btoa(htmlCssToImageApiKey + ':')}`
-      },
-      body: JSON.stringify({
-        html: htmlContent,
-        format: 'pdf',
-        device_scale: 2,
-        viewport_width: 1024,
-        viewport_height: 768
-      })
-    })
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(108, 117, 125);
+    doc.text('This report was generated automatically by the Property Ratings System.', margin, yPosition);
+    yPosition += 4;
+    doc.text(`Report ID: ${removeEmojis(propertyId)} | Generated: ${new Date().toISOString()}`, margin, yPosition);
 
-    if (!pdfResponse.ok) {
-      const errorText = await pdfResponse.text()
-      console.error('PDF generation error:', errorText)
-      return new Response(
-        JSON.stringify({ error: 'Failed to generate PDF' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const pdfResult = await pdfResponse.json() as any
-    
-    if (!pdfResult.url) {
-      console.error('No PDF URL returned')
-      return new Response(
-        JSON.stringify({ error: 'PDF generation failed' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Download the PDF
-    const pdfDownload = await fetch(pdfResult.url)
-    const pdfBuffer = await pdfDownload.arrayBuffer()
+    // Generate PDF buffer
+    console.log('Generating PDF buffer...');
+    const pdfBuffer = doc.output('arraybuffer')
 
     // Upload PDF to Supabase Storage
-    const pdfFileName = `property-report-${propertyData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`
+    const pdfFileName = `property-report-${cleanText(propertyData.name).replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`
     
+    console.log('Uploading PDF to Supabase Storage...');
     const { error: pdfUploadError } = await supabaseClient.storage
       .from('reports')
       .upload(pdfFileName, pdfBuffer, {
@@ -374,7 +427,10 @@ serve(async (req) => {
       )
     }
 
-    console.log('Sending email with PDF attachment...')
+    const fromEmail = Deno.env.get('REPORTS_FROM_EMAIL') || 'onboarding@resend.dev';
+    console.log('Sending email with PDF attachment...');
+    console.log('From email:', fromEmail);
+    console.log('To email:', userEmail);
 
     const emailResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -383,19 +439,19 @@ serve(async (req) => {
         'Authorization': `Bearer ${resendApiKey}`
       },
       body: JSON.stringify({
-        from: 'Property Ratings <reports@yourdomain.com>',
+        from: `Property Ratings <${fromEmail}>`,
         to: [userEmail],
         subject: `Property Rating Report - ${propertyData.name}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #007AFF;">🏠 Your Property Rating Report is Ready!</h1>
+            <h1 style="color: #007AFF;">Your Property Rating Report is Ready!</h1>
             
             <p>Hello!</p>
             
-            <p>Your requested property rating report for <strong>${propertyData.name}</strong> has been generated and is attached to this email.</p>
+            <p>Your requested property rating report for <strong>${propertyData.name}</strong> has been generated and is attached to this email as a PDF.</p>
             
             <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #007AFF;">📍 Property Details</h3>
+              <h3 style="margin-top: 0; color: #007AFF;">Property Details</h3>
               <p><strong>Name:</strong> ${propertyData.name}</p>
               <p><strong>Address:</strong> ${propertyData.address}</p>
               <p><strong>Report Generated:</strong> ${new Date().toLocaleDateString()}</p>
@@ -403,10 +459,10 @@ serve(async (req) => {
             
             <p>The attached PDF report includes:</p>
             <ul>
-              <li>📊 Overall rating averages</li>
-              <li>📈 Weekly and monthly trends</li>
-              <li>📝 Recent rating activity</li>
-              <li>📍 Property information</li>
+              <li>Overall rating averages</li>
+              <li>Weekly trends (last 8 weeks)</li>
+              <li>Recent rating activity</li>
+              <li>Detailed property information</li>
             </ul>
             
             <p>If you have any questions about this report, please don't hesitate to contact us.</p>
@@ -422,7 +478,7 @@ serve(async (req) => {
         `,
         attachments: [
           {
-            filename: `${propertyData.name.replace(/[^a-zA-Z0-9]/g, '-')}-report.pdf`,
+            filename: `${cleanText(propertyData.name).replace(/[^a-zA-Z0-9]/g, '-')}-report.pdf`,
             content: Array.from(new Uint8Array(pdfBuffer)),
             type: 'application/pdf'
           }
@@ -430,12 +486,14 @@ serve(async (req) => {
       })
     })
 
+    console.log('Email response status:', emailResponse.status);
+
     if (!emailResponse.ok) {
       const emailError = await emailResponse.text()
       console.error('Email sending error:', emailError)
       return new Response(
         JSON.stringify({
-          success: true,
+          success: false,
           message: 'PDF generated but email failed to send',
           property: propertyData.name,
           userEmail: userEmail,
@@ -447,6 +505,7 @@ serve(async (req) => {
     }
 
     const emailResult = await emailResponse.json()
+    console.log('PDF email sent successfully! ID:', emailResult.id)
     
     return new Response(
       JSON.stringify({
@@ -455,7 +514,8 @@ serve(async (req) => {
         property: propertyData.name,
         userEmail: userEmail,
         emailId: emailResult.id,
-        pdfUrl: pdfSignedUrlData?.signedUrl
+        pdfUrl: pdfSignedUrlData?.signedUrl,
+        format: 'PDF'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

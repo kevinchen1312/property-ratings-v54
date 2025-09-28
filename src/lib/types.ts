@@ -18,12 +18,12 @@ export interface Property {
   rating_count?: number;
   ratings?: {
     noise?: number;
-    friendliness?: number;
+    safety?: number;
     cleanliness?: number;
   };
 }
 
-export type RatingAttribute = 'noise' | 'friendliness' | 'cleanliness';
+export type RatingAttribute = 'noise' | 'safety' | 'cleanliness';
 
 export interface Rating {
   id: string;
@@ -42,13 +42,5 @@ export interface Rating {
   property_lng?: number;
 }
 
-export interface RatingSubmission {
-  propertyId: string;
-  noise: number;
-  friendliness: number;
-  cleanliness: number;
-  userLat: number;
-  userLng: number;
-}
 
 export type { Session };

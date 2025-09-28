@@ -27,8 +27,8 @@ supabase db reset
 
 ### 🔧 **Functions & Triggers**
 - **Auto-populate geography** from lat/lng coordinates
-- **Proximity validation** - Users must be within 100m to rate
-- **Daily unique ratings** - One rating per user/property/attribute per day
+- **Proximity validation** - Users must be within 200m to rate
+- **Hourly rate limiting** - One rating per user/property per hour (any attribute)
 
 ### 📊 **Views & Helpers**
 - **`property_ratings_summary`** - Average ratings per property
@@ -66,9 +66,9 @@ The migration includes sample data:
 
 ## Important Notes
 
-⚠️ **Proximity Validation**: Users must be within 100 meters of a property to submit ratings
+⚠️ **Proximity Validation**: Users must be within 200 meters of a property to submit ratings
 
-⚠️ **Daily Limits**: Users can only submit one rating per property attribute per calendar day
+⚠️ **Hourly Limits**: Users can only submit one rating per property per hour (any attribute)
 
 ⚠️ **PostGIS Required**: This migration requires the PostGIS extension to be available
 

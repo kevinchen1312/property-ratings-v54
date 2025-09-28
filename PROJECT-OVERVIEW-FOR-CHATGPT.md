@@ -97,8 +97,8 @@ purchase_item (id, purchase_id, property_id, unit_price, report_url)
 
 ### Key Features
 - **PostGIS Integration**: Spatial queries and distance calculations
-- **Proximity Validation**: Users must be within 2000m to rate
-- **Daily Rating Limits**: One rating per property/attribute per day
+- **Proximity Validation**: Users must be within 200m to rate
+- **Hourly Rating Limits**: One rating per property per hour (any attribute)
 - **Row Level Security**: User-specific data access policies
 
 ## 🔧 Key Functions & Triggers
@@ -120,8 +120,8 @@ purchase_item (id, purchase_id, property_id, unit_price, report_url)
 - Interactive map with real-time location
 - Property marker clustering for performance
 - 3-attribute rating system (noise, friendliness, cleanliness)
-- Proximity-based rating validation (2000m radius)
-- Daily rating limits per user/property
+- Proximity-based rating validation (200m radius)
+- Hourly rating limits per user/property
 
 ### ✅ Advanced Features
 - Stripe payment integration

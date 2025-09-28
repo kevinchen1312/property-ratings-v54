@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Loading } from '../components/Loading';
@@ -8,12 +10,20 @@ import ClusteredMapView from '../components/ClusteredMapView';
 import { LatLng, Property } from '../lib/types';
 import { RatingSubmission } from '../services/ratings';
 import { calculateDistance } from '../lib/ratingService';
-import { submitRatings, checkDailyRatingLimit } from '../services/ratings';
+import { submitRatings, checkHourlyRateLimit } from '../services/ratings';
+import { RootStackParamList } from '../navigation';
+import { redeemReports, getUserCredits } from '../services/reportsApi';
+import { supabase } from '../lib/supabase';
+import { CreditPurchaseModal } from '../components/CreditPurchaseModal';
+import { syncPendingCredits } from '../services/creditSync';
 // Properties loaded dynamically by ClusteredMapView
 
 const { width, height } = Dimensions.get('window');
 
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Map'>;
+
 export const MapScreen: React.FC = () => {
+  const navigation = useNavigation<NavigationProp>();
   const [location, setLocation] = useState<LatLng | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Initializing...');
@@ -23,12 +33,18 @@ export const MapScreen: React.FC = () => {
   const [distance, setDistance] = useState<number>(0);
   const [ratings, setRatings] = useState({
     noise: 0,
-    friendliness: 0,
+    safety: 0,
     cleanliness: 0,
   });
   const [submitting, setSubmitting] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [hasRatedToday, setHasRatedToday] = useState(false);
+  const [userCredits, setUserCredits] = useState(0);
+  const [testingReports, setTestingReports] = useState(false);
+  const [hasRatedRecently, setHasRatedRecently] = useState(false);
+  const [lastRatingTime, setLastRatingTime] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<string>('');
+  const [creatingTestRatings, setCreatingTestRatings] = useState(false);
+  const [creditPurchaseModalVisible, setCreditPurchaseModalVisible] = useState(false);
 
   // Map ref
   const mapRef = useRef<MapView>(null);
@@ -120,7 +136,7 @@ export const MapScreen: React.FC = () => {
 
   const handleMarkerPress = useCallback(async (property: Property) => {
     setSelectedProperty(property);
-    setRatings({ noise: 0, friendliness: 0, cleanliness: 0 });
+    setRatings({ noise: 0, safety: 0, cleanliness: 0 });
     
     if (location) {
       const dist = calculateDistance(
@@ -132,9 +148,10 @@ export const MapScreen: React.FC = () => {
       setDistance(dist);
     }
 
-    // Check if user has already rated this property today
-    const hasRated = await checkDailyRatingLimit(property.id);
-    setHasRatedToday(hasRated);
+    // Check if user has already rated this property within the hour
+    const rateLimitCheck = await checkHourlyRateLimit(property.id);
+    setHasRatedRecently(rateLimitCheck.isRateLimited);
+    setLastRatingTime(rateLimitCheck.lastRatingTime || null);
     
     setModalVisible(true);
   }, [location]);
@@ -142,9 +159,11 @@ export const MapScreen: React.FC = () => {
   const handleModalClose = useCallback(() => {
     setModalVisible(false);
     setSelectedProperty(null);
-    setRatings({ noise: 0, friendliness: 0, cleanliness: 0 });
+    setRatings({ noise: 0, safety: 0, cleanliness: 0 });
     setDistance(0);
-    setHasRatedToday(false);
+    setHasRatedRecently(false);
+    setLastRatingTime(null);
+    setCountdown('');
   }, []);
 
 
@@ -158,7 +177,7 @@ export const MapScreen: React.FC = () => {
     const submission: RatingSubmission = {
       propertyId: selectedProperty.id,
       noise: ratings.noise,
-      friendliness: ratings.friendliness,
+      safety: ratings.safety,
       cleanliness: ratings.cleanliness,
       userLat: location.latitude,
       userLng: location.longitude,
@@ -167,6 +186,12 @@ export const MapScreen: React.FC = () => {
     setSubmitting(true);
     try {
       await submitRatings(submission);
+      
+      // Update rate limit status after successful submission
+      const rateLimitCheck = await checkHourlyRateLimit(selectedProperty.id);
+      setHasRatedRecently(rateLimitCheck.isRateLimited);
+      setLastRatingTime(rateLimitCheck.lastRatingTime || null);
+      
       handleModalClose();
     } catch (error: any) {
       // Error handling is done in the service with user-friendly alerts
@@ -176,10 +201,279 @@ export const MapScreen: React.FC = () => {
     }
   }, [selectedProperty, location, ratings, handleModalClose]);
 
+  // Test functions
 
-  const isWithinRange = distance <= 2000;
-  const hasAtLeastOneRating = ratings.noise > 0 || ratings.friendliness > 0 || ratings.cleanliness > 0;
-  const canSubmit = isWithinRange && hasAtLeastOneRating && !submitting && !hasRatedToday;
+  const testDebitCredits = useCallback(async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session?.user) {
+        Alert.alert('Error', 'Not authenticated');
+        return;
+      }
+
+      console.log('Testing debit_credits function...');
+      const { data: deductSuccess, error: deductError } = await supabase.rpc('debit_credits', {
+        p_user: session.session.user.id,
+        p_amount: 1
+      });
+
+      console.log('Debit test result:', { deductSuccess, deductError });
+
+      if (deductError) {
+        Alert.alert('Debit Test Failed', `Error: ${deductError.message}`);
+      } else if (deductSuccess) {
+        // Refresh credits
+        const updatedCredits = await getUserCredits();
+        setUserCredits(updatedCredits);
+        Alert.alert('Debit Test Success', `Successfully deducted 1 credit. New balance: ${updatedCredits}`);
+      } else {
+        Alert.alert('Debit Test Failed', 'Function returned false - insufficient credits or other issue');
+      }
+    } catch (error: any) {
+      Alert.alert('Debit Test Error', error.message);
+    }
+  }, []);
+
+  const createTestRatings = useCallback(async () => {
+    if (creatingTestRatings) return;
+    
+    try {
+      setCreatingTestRatings(true);
+      
+      // Use the Merriman Road property
+      const propertyId = '364607cd-69fb-4e8a-9b20-4ff4ce6758e7';
+      const propertyLat = 37.313964;
+      const propertyLng = -122.069473;
+      
+      Alert.alert(
+        'Create Test Ratings',
+        'This will add some test ratings to the Merriman Road property so you can test the revenue sharing system.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Create Ratings', 
+            onPress: async () => {
+              try {
+                // Create a few test ratings for the current user
+                const testRatings = [
+                  { attribute: 'noise', stars: 4 },
+                  { attribute: 'safety', stars: 5 },
+                  { attribute: 'cleanliness', stars: 3 }
+                ];
+                
+                for (const rating of testRatings) {
+                  const submission: RatingSubmission = {
+                    propertyId: propertyId,
+                    noise: rating.attribute === 'noise' ? rating.stars : 0,
+                    safety: rating.attribute === 'safety' ? rating.stars : 0,
+                    cleanliness: rating.attribute === 'cleanliness' ? rating.stars : 0,
+                    userLat: propertyLat + (Math.random() - 0.5) * 0.001, // Within 100m
+                    userLng: propertyLng + (Math.random() - 0.5) * 0.001,
+                  };
+                  
+                  await submitRatings(submission);
+                  // Small delay to avoid rate limiting
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                Alert.alert(
+                  'Test Ratings Created! ✅',
+                  'You now have ratings for the Merriman Road property. Go to the Earnings screen and test the revenue sharing!',
+                  [{ text: 'Great!' }]
+                );
+              } catch (error: any) {
+                Alert.alert('Error', error.message || 'Failed to create test ratings');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to start test');
+    } finally {
+      setCreatingTestRatings(false);
+    }
+  }, [creatingTestRatings]);
+
+  const handleCreditPurchaseComplete = useCallback(async () => {
+    // Refresh credits after purchase
+    const updatedCredits = await getUserCredits();
+    setUserCredits(updatedCredits);
+  }, []);
+
+  const handleTestReports = useCallback(async () => {
+    if (!selectedProperty) {
+      Alert.alert('Error', 'Please select a property first');
+      return;
+    }
+
+    setTestingReports(true);
+    try {
+      const result = await redeemReports([selectedProperty.id]);
+      if (result.ok) {
+        // Refresh credits after successful report generation
+        const updatedCredits = await getUserCredits();
+        setUserCredits(updatedCredits);
+        
+        Alert.alert('Report Generated!', 'Your property report has been generated and will be sent to your email shortly.');
+      } else {
+        Alert.alert('Error', result.message || 'Failed to generate reports');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', `Failed to generate reports: ${error.message}`);
+    } finally {
+      setTestingReports(false);
+    }
+  }, [selectedProperty]);
+
+  // Auto-sync pending credits
+  const syncPendingCreditsAndUpdate = async () => {
+    console.log('🚀 Manual sync triggered');
+    try {
+      const result = await syncPendingCredits();
+      console.log('🔄 Sync result:', result);
+      if (result.creditsAdded > 0) {
+        console.log(`🎉 Auto-synced ${result.creditsAdded} credits from ${result.completed} purchases`);
+        // Refresh credits display
+        const credits = await getUserCredits();
+        setUserCredits(credits);
+        const creditText = result.creditsAdded === 1 ? 'credit' : 'credits';
+        Alert.alert(
+          'Credits Added! 🎉',
+          `${result.creditsAdded} ${creditText} ${result.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Auto-sync failed:', error);
+    }
+  };
+
+  // Load user credits on mount and sync pending purchases
+  useEffect(() => {
+    const loadCredits = async () => {
+      const credits = await getUserCredits();
+      setUserCredits(credits);
+      
+      // Auto-sync pending credits on app load (safe version)
+      try {
+        const syncResult = await syncPendingCredits();
+        if (syncResult.creditsAdded > 0) {
+          const updatedCredits = await getUserCredits();
+          setUserCredits(updatedCredits);
+          console.log(`🎉 Auto-synced ${syncResult.creditsAdded} credits on app load`);
+          // Show subtle notification instead of alert
+          setTimeout(() => {
+            Alert.alert(
+              'Credits Added! 🎉',
+              `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
+              [{ text: 'OK' }]
+            );
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('Auto-sync failed:', error);
+      }
+    };
+    loadCredits();
+  }, []);
+
+  // Auto-refresh when app comes back into focus (safe - only refreshes UI)
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        console.log('📱 App became active - refreshing credit balance');
+        try {
+          // First, try to sync any pending credits (this is the key fix!)
+          const syncResult = await syncPendingCredits();
+          if (syncResult.creditsAdded > 0) {
+            console.log(`🎉 Auto-synced ${syncResult.creditsAdded} credits on app focus`);
+            const updatedCredits = await getUserCredits();
+            setUserCredits(updatedCredits);
+            Alert.alert(
+              'Credits Added! 🎉',
+              `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
+              [{ text: 'OK' }]
+            );
+          } else {
+            // No pending credits, just refresh the UI from database
+            const currentCredits = await getUserCredits();
+            setUserCredits(currentCredits);
+          }
+        } catch (error) {
+          console.error('Auto-sync/refresh failed:', error);
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [userCredits]);
+
+  // Periodic credit sync check (every 30 seconds when app is active)
+  useEffect(() => {
+    const periodicSync = async () => {
+      try {
+        const syncResult = await syncPendingCredits();
+        if (syncResult.creditsAdded > 0) {
+          console.log(`🔄 Periodic sync added ${syncResult.creditsAdded} credits`);
+          const updatedCredits = await getUserCredits();
+          setUserCredits(updatedCredits);
+          Alert.alert(
+            'Credits Added! 🎉',
+            `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('Periodic sync failed:', error);
+      }
+    };
+
+    // Run periodic sync every 30 seconds
+    const interval = setInterval(periodicSync, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Countdown timer for rate limiting
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (hasRatedRecently && lastRatingTime) {
+      const updateCountdown = () => {
+        const lastRating = new Date(lastRatingTime);
+        const oneHourLater = new Date(lastRating.getTime() + 60 * 60 * 1000);
+        const now = new Date();
+        const timeLeft = oneHourLater.getTime() - now.getTime();
+        
+        if (timeLeft <= 0) {
+          setHasRatedRecently(false);
+          setLastRatingTime(null);
+          setCountdown('');
+          if (interval) clearInterval(interval);
+        } else {
+          const minutes = Math.floor(timeLeft / (1000 * 60));
+          const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+          setCountdown(`${minutes}m ${seconds}s`);
+        }
+      };
+      
+      updateCountdown(); // Initial call
+      interval = setInterval(updateCountdown, 1000);
+    } else {
+      setCountdown('');
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [hasRatedRecently, lastRatingTime]);
+
+
+  const isWithinRange = distance <= 200;
+  const hasAtLeastOneRating = ratings.noise > 0 || ratings.safety > 0 || ratings.cleanliness > 0;
+  const canSubmit = isWithinRange && hasAtLeastOneRating && !submitting && !hasRatedRecently;
 
   if (loading) {
     return <Loading message={loadingMessage} />;
@@ -204,6 +498,52 @@ export const MapScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* Credit Controls */}
+      <View style={styles.creditControls}>
+        <Text style={styles.creditsText}>Credits: {userCredits}</Text>
+        <TouchableOpacity 
+          style={[styles.creditButton, styles.buyCreditsButton]} 
+          onPress={() => setCreditPurchaseModalVisible(true)}
+        >
+          <Text style={styles.creditButtonText}>
+            💳 Buy Credits
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.testButton, styles.earningsButton]} 
+          onPress={() => navigation.navigate('Earnings')}
+        >
+          <Text style={styles.testButtonText}>
+            💰 Earnings
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.testButton, styles.analyticsButton]} 
+          onPress={() => navigation.navigate('Analytics')}
+        >
+          <Text style={styles.testButtonText}>
+            📊 Analytics
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.testButton, styles.testRatingsButton]} 
+          onPress={createTestRatings}
+          disabled={creatingTestRatings}
+        >
+          <Text style={styles.testButtonText}>
+            {creatingTestRatings ? 'Creating...' : '🧪 Add Test Ratings'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.testButton, styles.syncButton]} 
+          onPress={syncPendingCreditsAndUpdate}
+        >
+          <Text style={styles.testButtonText}>
+            🔄 Sync Credits
+          </Text>
+        </TouchableOpacity>
+      </View>
       
       <ClusteredMapView
         properties={[]} // Empty array - properties loaded dynamically by viewport
@@ -217,7 +557,7 @@ export const MapScreen: React.FC = () => {
         style={styles.map}
       />
       
-      {/* 2000m circle around selected property - overlay on clustered map */}
+      {/* 200m circle around selected property - overlay on clustered map */}
       {selectedProperty && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <MapView
@@ -239,7 +579,7 @@ export const MapScreen: React.FC = () => {
                 latitude: selectedProperty.lat,
                 longitude: selectedProperty.lng,
               }}
-              radius={2000} // 2000 meters
+              radius={200} // 200 meters
               strokeColor="rgba(0, 122, 255, 0.5)"
               fillColor="rgba(0, 122, 255, 0.1)"
               strokeWidth={2}
@@ -268,16 +608,24 @@ export const MapScreen: React.FC = () => {
                 <Text style={styles.propertyName}>{selectedProperty.name}</Text>
                 <Text style={styles.propertyAddress}>{selectedProperty.address}</Text>
                 <Text style={[styles.distanceText, !isWithinRange && styles.distanceWarning]}>
-                  Distance: {Math.round(distance)}m {!isWithinRange && '(Must be within 2000m to rate)'}
+                  Distance: {Math.round(distance)}m {!isWithinRange && '(Must be within 200m to rate)'}
                 </Text>
                 
-                {hasRatedToday && (
-                  <Text style={styles.alreadyRatedText}>
-                    ✅ You have already rated this property today
-                  </Text>
+                {hasRatedRecently && (
+                  <View style={styles.rateLimitContainer}>
+                    <Text style={styles.alreadyRatedText}>
+                      ✅ You have already rated this property within the hour
+                    </Text>
+                    {countdown && (
+                      <Text style={styles.countdownText}>
+                        ⏱️ You can rate again in: {countdown}
+                      </Text>
+                    )}
+                  </View>
                 )}
+
                 
-                {!hasRatedToday && (
+                {!hasRatedRecently && (
                   <Text style={styles.instructionText}>
                     Tap stars to rate • Tap the same star again to remove rating • At least one rating required
                   </Text>
@@ -288,19 +636,19 @@ export const MapScreen: React.FC = () => {
                     label="Noise Level"
                     rating={ratings.noise}
                     onRatingChange={(rating) => handleRatingChange('noise', rating)}
-                    disabled={!isWithinRange || hasRatedToday}
+                    disabled={!isWithinRange || hasRatedRecently}
                   />
                   <StarRating
-                    label="Friendliness"
-                    rating={ratings.friendliness}
-                    onRatingChange={(rating) => handleRatingChange('friendliness', rating)}
-                    disabled={!isWithinRange || hasRatedToday}
+                    label="Safety"
+                    rating={ratings.safety}
+                    onRatingChange={(rating) => handleRatingChange('safety', rating)}
+                    disabled={!isWithinRange || hasRatedRecently}
                   />
                   <StarRating
                     label="Cleanliness"
                     rating={ratings.cleanliness}
                     onRatingChange={(rating) => handleRatingChange('cleanliness', rating)}
-                    disabled={!isWithinRange || hasRatedToday}
+                    disabled={!isWithinRange || hasRatedRecently}
                   />
                 </View>
 
@@ -318,11 +666,28 @@ export const MapScreen: React.FC = () => {
                     <Text style={styles.submitButtonText}>Submit Ratings</Text>
                   )}
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.previewButton}
+                  onPress={handleTestReports}
+                  disabled={testingReports}
+                >
+                  <Text style={styles.previewButtonText}>
+                    {testingReports ? '📊 Generating Report...' : '📊 Generate Report'}
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
           </ScrollView>
         </View>
       </Modal>
+
+      <CreditPurchaseModal
+        visible={creditPurchaseModalVisible}
+        onClose={() => setCreditPurchaseModalVisible(false)}
+        onPurchaseComplete={handleCreditPurchaseComplete}
+        currentCredits={userCredits}
+      />
     </View>
   );
 };
@@ -423,12 +788,27 @@ const styles = StyleSheet.create({
   distanceWarning: {
     color: '#FF3B30',
   },
+  rateLimitContainer: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
   alreadyRatedText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#34C759',
-    marginBottom: 20,
+    marginBottom: 8,
     textAlign: 'center',
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FF9500',
+    textAlign: 'center',
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   instructionText: {
     fontSize: 14,
@@ -462,5 +842,80 @@ const styles = StyleSheet.create({
   },
   submitLoader: {
     marginRight: 8,
+  },
+  previewButton: {
+    backgroundColor: '#34C759',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  previewButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // Credit controls styles
+  creditControls: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 1000,
+  },
+  creditsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  testButton: {
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  reportsButton: {
+    backgroundColor: '#34C759',
+  },
+  earningsButton: {
+    backgroundColor: '#FF9500',
+  },
+  analyticsButton: {
+    backgroundColor: '#007AFF',
+  },
+  testRatingsButton: {
+    backgroundColor: '#9C27B0',
+  },
+  syncButton: {
+    backgroundColor: '#17A2B8',
+  },
+  creditButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  creditButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  buyCreditsButton: {
+    backgroundColor: '#28a745',
+  },
+  testButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

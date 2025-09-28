@@ -1,0 +1,306 @@
+{
+  "summary": {
+    "totalEntries": 9,
+    "propertiesCount": 7,
+    "photosCount": 9,
+    "analyzedAt": "2025-09-26T02:01:46.938Z"
+  },
+  "properties": [
+    {
+      "address": "1312 Centennial Court",
+      "entryCount": 2,
+      "entries": [
+        {
+          "address": "1312 Centennial Court",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F9d1cd0d6-fb47-47bb-9a06-b7176deed036%2FIMG_2120-16_20_24.png",
+          "photoName": "IMG_2120-16_20_24.png",
+          "latitude": 37.300148,
+          "longitude": -122.008553,
+          "ratings": {
+            "quiet": "",
+            "safe": "",
+            "clean": "",
+            "friendly": ""
+          },
+          "surveyor": "Kevin Chen",
+          "email": "kevinjchen@leadsong.com",
+          "timestamp": "2025-09-25T23:20:36"
+        },
+        {
+          "address": "1312 Centennial Court",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2Fa2cd083b-af10-42cd-af59-89064a98af83%2FIMG_2120-16_26_27.png",
+          "photoName": "IMG_2120-16_26_27.png",
+          "latitude": 37.300117,
+          "longitude": -122.008463,
+          "ratings": {
+            "quiet": "",
+            "safe": "",
+            "clean": "",
+            "friendly": ""
+          },
+          "surveyor": "Kevin Chen",
+          "email": "kevinchen1312@gmail.com",
+          "timestamp": "2025-09-25T23:26:48"
+        }
+      ]
+    },
+    {
+      "address": "1312 Centennial Court, San Jose, CA 95129",
+      "entryCount": 2,
+      "entries": [
+        {
+          "address": "1312 Centennial Court, San Jose, CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2Ffe0b2ddf-387e-4dc6-94c3-847d5d815ba6%2FIMG_2120-16_29_14.png",
+          "photoName": "IMG_2120-16_29_14.png",
+          "latitude": 37.300068,
+          "longitude": -122.008559,
+          "ratings": {
+            "quiet": "",
+            "safe": "",
+            "clean": "",
+            "friendly": ""
+          },
+          "surveyor": "Kevin Chen",
+          "email": "kevinjchen@leadsong.com",
+          "timestamp": "2025-09-25T23:29:27"
+        },
+        {
+          "address": "1312 Centennial Court, San Jose, CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F039688eb-ae17-418b-8eea-34fd0d38db19%2FIMG_2117-16_37_7.jpeg",
+          "photoName": "IMG_2117-16_37_7.jpeg",
+          "latitude": 37.299408,
+          "longitude": -122.009643,
+          "ratings": {
+            "quiet": "",
+            "safe": "",
+            "clean": "",
+            "friendly": ""
+          },
+          "surveyor": "Kevin Chen",
+          "email": "Kevinjchen@leadsong.com",
+          "timestamp": "2025-09-25T23:37:37"
+        }
+      ]
+    },
+    {
+      "address": "1312 Centennial Court San Jose CA 95129",
+      "entryCount": 1,
+      "entries": [
+        {
+          "address": "1312 Centennial Court San Jose CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F84196b10-a5ad-4fc7-8e54-f07cb381b473%2FIMG_2110-17_16_58.jpeg",
+          "photoName": "IMG_2110-17_16_58.jpeg",
+          "latitude": 37.299408,
+          "longitude": -122.009643,
+          "ratings": {
+            "quiet": "5",
+            "safe": "5",
+            "clean": "5",
+            "friendly": "5"
+          },
+          "surveyor": "Kevon Chen",
+          "email": "Kevinjchen@leadsong.com",
+          "timestamp": "2025-09-26T00:17:33"
+        }
+      ]
+    },
+    {
+      "address": "1306 Centennial Court, San Jose, CA 95129",
+      "entryCount": 1,
+      "entries": [
+        {
+          "address": "1306 Centennial Court, San Jose, CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F199df83d-da84-4780-b6d6-852386bc49f6%2FIMG_2118-17_18_9.jpeg",
+          "photoName": "IMG_2118-17_18_9.jpeg",
+          "latitude": 37.299408,
+          "longitude": -122.009643,
+          "ratings": {
+            "quiet": "5",
+            "safe": "5",
+            "clean": "5",
+            "friendly": "5"
+          },
+          "surveyor": "Kevin Chen",
+          "email": "Kevinchen1312@gmail.com",
+          "timestamp": "2025-09-26T00:18:24"
+        }
+      ]
+    },
+    {
+      "address": "1680 Larkin Avenue San Jose CA 95129",
+      "entryCount": 1,
+      "entries": [
+        {
+          "address": "1680 Larkin Avenue San Jose CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F8c013053-03d6-4e7e-b116-43ec464add87%2Fimage-17_35_8.jpg",
+          "photoName": "image-17_35_8.jpg",
+          "latitude": 37.299408,
+          "longitude": -122.009643,
+          "ratings": {
+            "quiet": "5",
+            "safe": "5",
+            "clean": "5",
+            "friendly": "Very quiet"
+          },
+          "surveyor": "Kevin Chen",
+          "email": "Kevinjchen@leadsong.com",
+          "timestamp": "2025-09-26T00:35:25"
+        }
+      ]
+    },
+    {
+      "address": "1318 Centennial Court San Jose CA 95129",
+      "entryCount": 1,
+      "entries": [
+        {
+          "address": "1318 Centennial Court San Jose CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F184c51bc-21f8-4df2-b4a1-29a8a0e316ee%2FIMG_2113-18_45_17.jpeg",
+          "photoName": "IMG_2113-18_45_17.jpeg",
+          "latitude": 37.299417,
+          "longitude": -122.009637,
+          "ratings": {
+            "quiet": "1",
+            "safe": "5",
+            "clean": "5",
+            "friendly": "3"
+          },
+          "surveyor": "Kevin Chen",
+          "email": "Kevinchen1312@gmail.com",
+          "timestamp": "2025-09-26T01:45:53"
+        }
+      ]
+    },
+    {
+      "address": "1310 CEntennial Court San Jose CA 95129",
+      "entryCount": 1,
+      "entries": [
+        {
+          "address": "1310 CEntennial Court San Jose CA 95129",
+          "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F980b04e7-6aa6-4f48-839a-304a0def4295%2FIMG_2121-18_57_53.png",
+          "photoName": "IMG_2121-18_57_53.png",
+          "latitude": 37.299844,
+          "longitude": -122.008751,
+          "ratings": {
+            "quiet": "1",
+            "safe": "5",
+            "clean": "5",
+            "friendly": "3"
+          },
+          "surveyor": "Kevin Chen",
+          "email": "kevinjchen@leadsong.com",
+          "timestamp": "2025-09-26T01:58:10"
+        }
+      ]
+    }
+  ],
+  "photoUrls": [
+    {
+      "address": "1312 Centennial Court",
+      "photoName": "IMG_2120-16_20_24.png",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F9d1cd0d6-fb47-47bb-9a06-b7176deed036%2FIMG_2120-16_20_24.png",
+      "timestamp": "2025-09-25T23:20:36",
+      "ratings": {
+        "quiet": "",
+        "safe": "",
+        "clean": "",
+        "friendly": ""
+      }
+    },
+    {
+      "address": "1312 Centennial Court",
+      "photoName": "IMG_2120-16_26_27.png",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2Fa2cd083b-af10-42cd-af59-89064a98af83%2FIMG_2120-16_26_27.png",
+      "timestamp": "2025-09-25T23:26:48",
+      "ratings": {
+        "quiet": "",
+        "safe": "",
+        "clean": "",
+        "friendly": ""
+      }
+    },
+    {
+      "address": "1312 Centennial Court, San Jose, CA 95129",
+      "photoName": "IMG_2120-16_29_14.png",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2Ffe0b2ddf-387e-4dc6-94c3-847d5d815ba6%2FIMG_2120-16_29_14.png",
+      "timestamp": "2025-09-25T23:29:27",
+      "ratings": {
+        "quiet": "",
+        "safe": "",
+        "clean": "",
+        "friendly": ""
+      }
+    },
+    {
+      "address": "1312 Centennial Court, San Jose, CA 95129",
+      "photoName": "IMG_2117-16_37_7.jpeg",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F039688eb-ae17-418b-8eea-34fd0d38db19%2FIMG_2117-16_37_7.jpeg",
+      "timestamp": "2025-09-25T23:37:37",
+      "ratings": {
+        "quiet": "",
+        "safe": "",
+        "clean": "",
+        "friendly": ""
+      }
+    },
+    {
+      "address": "1312 Centennial Court San Jose CA 95129",
+      "photoName": "IMG_2110-17_16_58.jpeg",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F84196b10-a5ad-4fc7-8e54-f07cb381b473%2FIMG_2110-17_16_58.jpeg",
+      "timestamp": "2025-09-26T00:17:33",
+      "ratings": {
+        "quiet": "5",
+        "safe": "5",
+        "clean": "5",
+        "friendly": "5"
+      }
+    },
+    {
+      "address": "1306 Centennial Court, San Jose, CA 95129",
+      "photoName": "IMG_2118-17_18_9.jpeg",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F199df83d-da84-4780-b6d6-852386bc49f6%2FIMG_2118-17_18_9.jpeg",
+      "timestamp": "2025-09-26T00:18:24",
+      "ratings": {
+        "quiet": "5",
+        "safe": "5",
+        "clean": "5",
+        "friendly": "5"
+      }
+    },
+    {
+      "address": "1680 Larkin Avenue San Jose CA 95129",
+      "photoName": "image-17_35_8.jpg",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F8c013053-03d6-4e7e-b116-43ec464add87%2Fimage-17_35_8.jpg",
+      "timestamp": "2025-09-26T00:35:25",
+      "ratings": {
+        "quiet": "5",
+        "safe": "5",
+        "clean": "5",
+        "friendly": "Very quiet"
+      }
+    },
+    {
+      "address": "1318 Centennial Court San Jose CA 95129",
+      "photoName": "IMG_2113-18_45_17.jpeg",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F184c51bc-21f8-4df2-b4a1-29a8a0e316ee%2FIMG_2113-18_45_17.jpeg",
+      "timestamp": "2025-09-26T01:45:53",
+      "ratings": {
+        "quiet": "1",
+        "safe": "5",
+        "clean": "5",
+        "friendly": "3"
+      }
+    },
+    {
+      "address": "1310 CEntennial Court San Jose CA 95129",
+      "photoName": "IMG_2121-18_57_53.png",
+      "photoUrl": "https://kc.kobotoolbox.org/media/original?media_file=kevinjchen%2Fattachments%2F9bd8c6fce1514884983e55c1e2a65d57%2F980b04e7-6aa6-4f48-839a-304a0def4295%2FIMG_2121-18_57_53.png",
+      "timestamp": "2025-09-26T01:58:10",
+      "ratings": {
+        "quiet": "1",
+        "safe": "5",
+        "clean": "5",
+        "friendly": "3"
+      }
+    }
+  ]
+}

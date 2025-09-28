@@ -114,7 +114,7 @@ serve(async (req) => {
             const weeklyGrouped = weeklyData.reduce((acc: any, item: any) => {
                 const weekKey = item.week_start;
                 if (!acc[weekKey]) {
-                    acc[weekKey] = { week_start: weekKey, noise: null, friendliness: null, cleanliness: null };
+                    acc[weekKey] = { week_start: weekKey, noise: null, safety: null, cleanliness: null };
                 }
                 acc[weekKey][item.attribute] = { avg_rating: item.avg_rating, rating_count: item.rating_count };
                 return acc;
@@ -130,7 +130,7 @@ serve(async (req) => {
                         <tr>
                             <th>Week</th>
                             <th>Noise</th>
-                            <th>Friendliness</th>
+                            <th>Safety</th>
                             <th>Cleanliness</th>
                         </tr>
                     </thead>
@@ -139,7 +139,7 @@ serve(async (req) => {
                             <tr>
                                 <td>${new Date(week.week_start).toLocaleDateString()}</td>
                                 <td>${week.noise ? `${week.noise.avg_rating} ⭐ (${week.noise.rating_count})` : '-'}</td>
-                                <td>${week.friendliness ? `${week.friendliness.avg_rating} ⭐ (${week.friendliness.rating_count})` : '-'}</td>
+                                <td>${week.safety ? `${week.safety.avg_rating} ⭐ (${week.safety.rating_count})` : '-'}</td>
                                 <td>${week.cleanliness ? `${week.cleanliness.avg_rating} ⭐ (${week.cleanliness.rating_count})` : '-'}</td>
                             </tr>
                         `).join('')}

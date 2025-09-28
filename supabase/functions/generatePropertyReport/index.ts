@@ -48,10 +48,20 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Helper function to replace star emojis with text
+  const replaceStars = (text: string): string => {
+    if (!text) return text;
+    return text
+      .replace(/⭐/g, 'stars')
+      .replace(/★/g, 'stars')
+      .replace(/☆/g, 'stars')
+      .replace(/✨/g, 'sparkles');
+  };
+
   try {
     const supabaseClient = createClient(
-      Deno.env.get('PROJECT_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     const { propertyId } = await req.json()
@@ -180,7 +190,7 @@ serve(async (req) => {
       let totalCount = 0
 
       overallRatings.forEach((rating) => {
-        page.drawText(`${rating.attribute}: ${rating.avg_rating.toFixed(2)} ⭐ (${rating.rating_count} ratings)`, {
+        page.drawText(replaceStars(`${rating.attribute}: ${rating.avg_rating.toFixed(2)} ⭐ (${rating.rating_count} ratings)`), {
           x: 70,
           y: yPosition,
           size: 12,
@@ -193,7 +203,7 @@ serve(async (req) => {
 
       if (totalCount > 0) {
         const overallAvg = totalRating / totalCount
-        page.drawText(`Overall Combined: ${overallAvg.toFixed(2)} ⭐`, {
+        page.drawText(replaceStars(`Overall Combined: ${overallAvg.toFixed(2)} ⭐`), {
           x: 70,
           y: yPosition,
           size: 12,
@@ -226,7 +236,7 @@ serve(async (req) => {
       const weeklyRatings = weeklyData as WeeklyData[]
       weeklyRatings.forEach((week) => {
         const weekDate = new Date(week.week_start).toLocaleDateString()
-        page.drawText(`Week ${weekDate}: ${week.attribute} = ${week.avg_rating.toFixed(2)} ⭐ (${week.rating_count})`, {
+        page.drawText(replaceStars(`Week ${weekDate}: ${week.attribute} = ${week.avg_rating.toFixed(2)} ⭐ (${week.rating_count})`), {
           x: 70,
           y: yPosition,
           size: 10,
@@ -266,7 +276,7 @@ serve(async (req) => {
       const monthlyRatings = monthlyData as MonthlyData[]
       monthlyRatings.forEach((month) => {
         const monthDate = new Date(month.month_start).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
-        page.drawText(`${monthDate}: ${month.attribute} = ${month.avg_rating.toFixed(2)} ⭐ (${month.rating_count})`, {
+        page.drawText(replaceStars(`${monthDate}: ${month.attribute} = ${month.avg_rating.toFixed(2)} ⭐ (${month.rating_count})`), {
           x: 70,
           y: yPosition,
           size: 10,
@@ -297,19 +307,19 @@ serve(async (req) => {
 
     if (ratingLog && ratingLog.length > 0) {
       const recentRatings = (ratingLog as RatingLog[]).slice(0, 20) // Show last 20 ratings
-      recentRatings.forEach((log) => {
+      for (const log of recentRatings) {
+        if (yPosition < 50) break // Stop if we run out of space
+        
         const date = new Date(log.created_at).toLocaleDateString()
         const time = new Date(log.created_at).toLocaleTimeString()
-        page.drawText(`${date} ${time}: ${log.attribute} = ${log.stars} ⭐ (User: ${log.user_hash})`, {
+        page.drawText(replaceStars(`${date} ${time}: ${log.attribute} = ${log.stars} ⭐ (User: ${log.user_hash})`), {
           x: 70,
           y: yPosition,
           size: 9,
           font: helveticaFont,
         })
         yPosition -= 12
-        
-        if (yPosition < 50) break // Stop if we run out of space
-      })
+      }
     } else {
       page.drawText('No rating history available', {
         x: 70,

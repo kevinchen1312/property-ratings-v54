@@ -3,6 +3,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
 import { MapScreen } from '../screens/MapScreen';
 import { AuthScreen } from '../screens/AuthScreen';
+import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
+import { EarningsScreen } from '../screens/EarningsScreen';
+import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { getInitialSession, onAuthStateChange, signOut } from '../lib/auth';
 import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
@@ -10,6 +13,12 @@ import { Loading } from '../components/Loading';
 export type RootStackParamList = {
   Map: undefined;
   Auth: undefined;
+  ReportPreview: {
+    propertyId: string;
+    propertyName?: string;
+  };
+  Earnings: undefined;
+  Analytics: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -60,25 +69,69 @@ export const RootNavigator: React.FC = () => {
   return (
     <Stack.Navigator>
       {session ? (
-        <Stack.Screen
-          name="Map"
-          component={MapScreen}
-          options={{
-            title: 'Property Map',
-            headerStyle: {
-              backgroundColor: '#007AFF',
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerRight: () => (
-              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                <Text style={styles.logoutButtonText}>Logout</Text>
-              </TouchableOpacity>
-            ),
-          }}
-        />
+        <>
+          <Stack.Screen
+            name="Map"
+            component={MapScreen}
+            options={{
+              title: 'Property Map',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+              headerRight: () => (
+                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                  <Text style={styles.logoutButtonText}>Logout</Text>
+                </TouchableOpacity>
+              ),
+            }}
+          />
+          <Stack.Screen
+            name="ReportPreview"
+            component={ReportPreviewScreen}
+            options={{
+              title: 'Property Report',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+          <Stack.Screen
+            name="Earnings"
+            component={EarningsScreen}
+            options={{
+              title: 'My Earnings',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+          <Stack.Screen
+            name="Analytics"
+            component={AnalyticsScreen}
+            options={{
+              title: 'Rating Analytics',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+        </>
       ) : (
         <Stack.Screen
           name="Auth"

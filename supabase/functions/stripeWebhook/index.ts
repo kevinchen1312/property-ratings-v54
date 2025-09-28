@@ -98,8 +98,13 @@ serve(async (req) => {
       throw new Error('Stripe webhook secret not configured');
     }
 
-    // Initialize clients
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Initialize clients with service role (bypasses RLS)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2023-10-16',
     });
@@ -112,13 +117,20 @@ serve(async (req) => {
       return new Response('Missing stripe-signature header', { status: 400 });
     }
 
-    // Verify the webhook signature
+    // Debug logging
+    console.log('Webhook secret length:', stripeWebhookSecret?.length);
+    console.log('Webhook secret prefix:', stripeWebhookSecret?.substring(0, 10));
+    console.log('Signature header:', signature?.substring(0, 20));
+    console.log('Body length:', body?.length);
+
+    // Verify the webhook signature (async version for Deno)
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret);
+      event = await stripe.webhooks.constructEventAsync(body, signature, stripeWebhookSecret);
     } catch (err) {
       console.error('Webhook signature verification failed:', err);
-      return new Response('Invalid signature', { status: 400 });
+      console.error('Error details:', err.message);
+      return new Response(`Invalid signature: ${err.message}`, { status: 400 });
     }
 
     console.log('Received webhook event:', event.type);
@@ -129,7 +141,31 @@ serve(async (req) => {
       
       console.log('Processing successful checkout:', session.id);
 
-      // Get purchase from database
+      // Check if this is a credit purchase or property report purchase
+      const { data: creditPurchase } = await supabase
+        .from('credit_purchase')
+        .select('*')
+        .eq('stripe_session_id', session.id)
+        .single();
+
+      if (creditPurchase) {
+        // Handle credit purchase
+        console.log('Processing credit purchase:', creditPurchase.id);
+        
+        const { data: result, error: creditError } = await supabase.rpc('complete_credit_purchase', {
+          p_stripe_session_id: session.id
+        });
+
+        if (creditError || !result) {
+          console.error('Failed to complete credit purchase:', creditError);
+          return new Response('Failed to process credit purchase', { status: 500 });
+        }
+
+        console.log(`Successfully added ${creditPurchase.credits} credits to user ${creditPurchase.user_id}`);
+        return new Response('Credit purchase completed', { status: 200 });
+      }
+
+      // Handle property report purchase (existing logic)
       const { data: purchase, error: purchaseError } = await supabase
         .from('purchase')
         .select('*, purchase_item(*, property(name, address))')
@@ -177,6 +213,125 @@ serve(async (req) => {
         } catch (error) {
           console.error(`Failed to generate report for property ${item.property_id}:`, error);
           // Continue with other reports even if one fails
+        }
+      }
+
+      // Process revenue sharing for each property
+      for (const item of purchase.purchase_item) {
+        try {
+          console.log(`Processing revenue sharing for property: ${item.property_id}`);
+          
+          // Calculate revenue sharing
+          const totalRevenue = item.unit_price;
+          const platformShare = totalRevenue * 0.80;
+          const topContributorShare = totalRevenue * 0.10;
+          const otherContributorsShare = totalRevenue * 0.10;
+
+          // Get top contributor for this property
+          const { data: topContributorData, error: topContributorError } = await supabase
+            .rpc('get_top_contributor', { property_uuid: item.property_id });
+
+          if (topContributorError) {
+            console.error('Error getting top contributor:', topContributorError);
+            continue; // Skip this property but continue with others
+          }
+
+          const topContributor = topContributorData?.[0];
+          console.log('Top contributor:', topContributor);
+
+          // Create revenue distribution record
+          const { data: revenueDistribution, error: revenueError } = await supabase
+            .from('revenue_distribution')
+            .insert({
+              purchase_id: purchase.id,
+              property_id: item.property_id,
+              total_revenue: totalRevenue,
+              platform_share: platformShare,
+              top_contributor_share: topContributorShare,
+              other_contributors_share: otherContributorsShare,
+              top_contributor_id: topContributor?.user_id,
+              top_contributor_rating_count: topContributor?.rating_count || 0,
+            })
+            .select()
+            .single();
+
+          if (revenueError) {
+            console.error('Error creating revenue distribution:', revenueError);
+            continue;
+          }
+
+          console.log('Revenue distribution created:', revenueDistribution.id);
+
+          // Create contributor payouts
+          const contributorPayouts = [];
+
+          // Add top contributor payout
+          if (topContributor?.user_id) {
+            contributorPayouts.push({
+              revenue_distribution_id: revenueDistribution.id,
+              user_id: topContributor.user_id,
+              payout_amount: topContributorShare,
+              rating_count: topContributor.rating_count,
+              is_top_contributor: true,
+              status: 'pending',
+            });
+          }
+
+          // Get other contributors (excluding top contributor)
+          const { data: otherRatings, error: otherRatingsError } = await supabase
+            .from('rating')
+            .select('user_id')
+            .eq('property_id', item.property_id)
+            .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())
+            .not('user_id', 'eq', topContributor?.user_id || '');
+
+          if (!otherRatingsError && otherRatings && otherRatings.length > 0) {
+            // Count ratings per user
+            const userRatingCounts: { [key: string]: number } = {};
+            otherRatings.forEach(rating => {
+              userRatingCounts[rating.user_id] = (userRatingCounts[rating.user_id] || 0) + 1;
+            });
+
+            const totalOtherRatings = Object.values(userRatingCounts).reduce((sum, count) => sum + count, 0);
+
+            // Create payouts for other contributors
+            if (totalOtherRatings > 0) {
+              Object.entries(userRatingCounts).forEach(([userId, ratingCount]) => {
+                const proportion = ratingCount / totalOtherRatings;
+                const payoutAmount = otherContributorsShare * proportion;
+
+                contributorPayouts.push({
+                  revenue_distribution_id: revenueDistribution.id,
+                  user_id: userId,
+                  payout_amount: payoutAmount,
+                  rating_count: ratingCount,
+                  is_top_contributor: false,
+                  status: 'pending',
+                });
+              });
+            }
+          }
+
+          // Insert all contributor payouts
+          if (contributorPayouts.length > 0) {
+            const { error: payoutError } = await supabase
+              .from('contributor_payouts')
+              .insert(contributorPayouts);
+
+            if (payoutError) {
+              console.error('Error creating contributor payouts:', payoutError);
+            } else {
+              console.log(`Created ${contributorPayouts.length} contributor payouts`);
+              contributorPayouts.forEach(payout => {
+                console.log(`  - $${payout.payout_amount.toFixed(2)} to ${payout.user_id.substring(0, 8)} (${payout.is_top_contributor ? 'top' : 'other'})`);
+              });
+            }
+          }
+          
+          console.log(`Revenue sharing processed for property ${item.property_id}`);
+        } catch (error) {
+          console.error(`Failed to process revenue sharing for property ${item.property_id}:`, error);
+          // Don't fail the webhook if revenue sharing fails
         }
       }
 

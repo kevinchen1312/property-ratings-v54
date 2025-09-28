@@ -39,8 +39,6 @@ export const sendReportEmail = async (
       return false;
     }
 
-    console.log(`📧 Sending report email to: ${to}`);
-    console.log(`📄 Property: ${property.name}`);
 
     const emailData = {
       from: `${fromName} <${fromEmail}>`,
@@ -66,18 +64,10 @@ export const sendReportEmail = async (
     }
 
     const result = await response.json();
-    console.log('✅ Email sent successfully:', result.id);
-    
-    Alert.alert(
-      'Email Sent!',
-      `Property report has been sent to ${to}`,
-      [{ text: 'OK' }]
-    );
 
     return true;
 
   } catch (error) {
-    console.error('❌ Email sending failed:', error);
     Alert.alert('Error', 'Failed to send email. Please check your connection and try again.');
     return false;
   }

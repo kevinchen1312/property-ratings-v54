@@ -1,0 +1,181 @@
+{
+  "summary": {
+    "totalEntries": 9,
+    "withinValidationRange": 5,
+    "outsideValidationRange": 4,
+    "validationSuccessRate": 55.55555555555556,
+    "averageDistance": 60.597208356420296,
+    "averagePrecision": 85.9012307008838,
+    "analyzedAt": "2025-09-26T02:04:22.320Z"
+  },
+  "entries": [
+    {
+      "entryNumber": 1,
+      "address": "1312 Centennial Court",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-25T23:20:36",
+      "userLocation": {
+        "lat": 37.300148,
+        "lng": -122.008553
+      },
+      "expectedLocation": {
+        "lat": 37.3001,
+        "lng": -122.0086
+      },
+      "distance": 6.765370302864475,
+      "precision": 185,
+      "isValid": true,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 2,
+      "address": "1312 Centennial Court",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-25T23:26:48",
+      "userLocation": {
+        "lat": 37.300117,
+        "lng": -122.008463
+      },
+      "expectedLocation": {
+        "lat": 37.3001,
+        "lng": -122.0086
+      },
+      "distance": 12.264541884168265,
+      "precision": 182,
+      "isValid": true,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 3,
+      "address": "1312 Centennial Court, San Jose, CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-25T23:29:27",
+      "userLocation": {
+        "lat": 37.300068,
+        "lng": -122.008559
+      },
+      "expectedLocation": {
+        "lat": 37.3001,
+        "lng": -122.0086
+      },
+      "distance": 5.080643969868814,
+      "precision": 185,
+      "isValid": true,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 4,
+      "address": "1312 Centennial Court, San Jose, CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-25T23:37:37",
+      "userLocation": {
+        "lat": 37.299408,
+        "lng": -122.009643
+      },
+      "expectedLocation": {
+        "lat": 37.3001,
+        "lng": -122.0086
+      },
+      "distance": 120.13352293369132,
+      "precision": 7.47774218215482,
+      "isValid": false,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 5,
+      "address": "1312 Centennial Court San Jose CA 95129",
+      "surveyor": "Kevon Chen",
+      "timestamp": "2025-09-26T00:17:33",
+      "userLocation": {
+        "lat": 37.299408,
+        "lng": -122.009643
+      },
+      "expectedLocation": {
+        "lat": 37.3001,
+        "lng": -122.0086
+      },
+      "distance": 120.13352293369132,
+      "precision": 7.47774218215482,
+      "isValid": false,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 6,
+      "address": "1306 Centennial Court, San Jose, CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-26T00:18:24",
+      "userLocation": {
+        "lat": 37.299408,
+        "lng": -122.009643
+      },
+      "expectedLocation": {
+        "lat": 37.30005,
+        "lng": -122.00865
+      },
+      "distance": 113.18522070622035,
+      "precision": 7.47774218215482,
+      "isValid": false,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 7,
+      "address": "1680 Larkin Avenue San Jose CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-26T00:35:25",
+      "userLocation": {
+        "lat": 37.299408,
+        "lng": -122.009643
+      },
+      "expectedLocation": {
+        "lat": 37.2995,
+        "lng": -122.0098
+      },
+      "distance": 17.248327070344956,
+      "precision": 7.47774218215482,
+      "isValid": true,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 8,
+      "address": "1318 Centennial Court San Jose CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-26T01:45:53",
+      "userLocation": {
+        "lat": 37.299417,
+        "lng": -122.009637
+      },
+      "expectedLocation": {
+        "lat": 37.300125,
+        "lng": -122.008575
+      },
+      "distance": 122.56401372374987,
+      "precision": 19.200107579335192,
+      "isValid": false,
+      "isWithinAppRange": true
+    },
+    {
+      "entryNumber": 9,
+      "address": "1310 CEntennial Court San Jose CA 95129",
+      "surveyor": "Kevin Chen",
+      "timestamp": "2025-09-26T01:58:10",
+      "userLocation": {
+        "lat": 37.299844,
+        "lng": -122.008751
+      },
+      "expectedLocation": {
+        "lat": 37.300075,
+        "lng": -122.008625
+      },
+      "distance": 27.999711683183314,
+      "precision": 172,
+      "isValid": true,
+      "isWithinAppRange": true
+    }
+  ],
+  "recommendations": {
+    "currentValidationRadius": 100,
+    "suggestedValidationRadius": 100,
+    "gpsAccuracyIssues": true,
+    "suspiciousEntries": 0
+  }
+}

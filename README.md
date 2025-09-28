@@ -14,14 +14,17 @@ A React Native app built with Expo that shows your current location on a map wit
    npm install -g @expo/cli
    ```
 
-3. **Environment Setup:**
-   Create a `.env` file in the root directory with:
+3. **Environment Setup (Optional):**
+   The app has fallback Supabase credentials configured, so it should work out of the box for testing.
+   
+   If you want to use your own Supabase instance, create a `.env` file in the root directory with:
    ```
    EXPO_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_PROJECT_URL
    EXPO_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+   GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
    ```
 
-   Replace `YOUR_SUPABASE_PROJECT_URL` and `YOUR_SUPABASE_ANON_KEY` with your actual Supabase project credentials.
+   Replace with your actual credentials. The Google Maps API key is only needed for iOS maps.
 
 4. **Supabase Setup:**
    - Create a new project at [supabase.com](https://supabase.com)
@@ -46,6 +49,21 @@ A React Native app built with Expo that shows your current location on a map wit
    npm run android
    ```
    Or press `a` in the terminal after running `npm run start`
+
+## Quick Testing for Other Developers
+
+**Want to test this app quickly?** Just run:
+
+```bash
+git clone <repository-url>
+cd property-ratings-v54
+npm install
+npm run start
+```
+
+The app will work immediately with the configured Supabase backend. No additional setup required for basic testing!
+
+**Note for iOS testing:** Maps may not work without a Google Maps API key. Android uses Google Maps by default and should work fine.
 
 ## Usage
 
@@ -94,4 +112,4 @@ property-ratings-v54/
 ## Permissions
 
 The app requests the following permissions:
-- **Location (iOS)**: "We use your location to validate proximity to properties and enable on-site ratings."
+- **Location (iOS)**: "We use your location to validate proximity to properties (within 200m) and enable on-site ratings."
