@@ -9,6 +9,8 @@ interface ClusteredMapViewProps {
   onPropertyPress?: (property: Property) => void;
   initialRegion?: Region;
   style?: any;
+  userLocation?: { latitude: number; longitude: number } | null;
+  enableProximityLoading?: boolean;
 }
 
 interface ClusterPoint {
@@ -80,7 +82,9 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
   properties,
   onPropertyPress,
   initialRegion,
-  style
+  style,
+  userLocation,
+  enableProximityLoading = false
 }) => {
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
@@ -92,43 +96,61 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
     }
   );
 
-  // VIEWPORT-BASED LOADING: Load properties dynamically based on current view
+  // VIEWPORT-BASED LOADING: Load properties dynamically based on current view or proximity
   const [viewportProperties, setViewportProperties] = useState<Property[]>([]);
+  const [proximityProperties, setProximityProperties] = useState<Property[]>([]);
   
-  // Load properties for current viewport
+  // Load properties for current viewport or proximity
   useEffect(() => {
-    const loadViewportProperties = async () => {
+    const loadProperties = async () => {
       const zoom = Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2);
       
-      // Only load when zoomed in enough (performance optimization)
-      if (zoom < 12) {
-        setViewportProperties([]);
-        return;
-      }
-
       try {
-        const bounds = {
-          north: region.latitude + region.latitudeDelta,
-          south: region.latitude - region.latitudeDelta,
-          east: region.longitude + region.longitudeDelta,
-          west: region.longitude - region.longitudeDelta,
-        };
+        if (enableProximityLoading && userLocation) {
+          // PROXIMITY-BASED LOADING: Load properties within 200m of user
+          const { getPropertiesWithinRadius } = await import('../services/properties');
+          const proximityProps = await getPropertiesWithinRadius(
+            userLocation.latitude, 
+            userLocation.longitude, 
+            200 // 200 meters radius
+          );
+          
+          console.log(`📍 Loaded ${proximityProps.length} properties within 200m of user location`);
+          setProximityProperties(proximityProps);
+          setViewportProperties([]); // Clear viewport properties when using proximity
+        } else {
+          // VIEWPORT-BASED LOADING: Load properties based on current view
+          // Only load when zoomed in enough (performance optimization)
+          if (zoom < 12) {
+            setViewportProperties([]);
+            setProximityProperties([]);
+            return;
+          }
 
-        // Import the function from services
-        const { getPropertiesInBounds } = await import('../services/properties');
-        const viewportProps = await getPropertiesInBounds(bounds);
-        
-        console.log(`📍 Loaded ${viewportProps.length} properties for viewport (zoom ${zoom})`);
-        setViewportProperties(viewportProps);
+          const bounds = {
+            north: region.latitude + region.latitudeDelta,
+            south: region.latitude - region.latitudeDelta,
+            east: region.longitude + region.longitudeDelta,
+            west: region.longitude - region.longitudeDelta,
+          };
+
+          // Import the function from services
+          const { getPropertiesInBounds } = await import('../services/properties');
+          const viewportProps = await getPropertiesInBounds(bounds);
+          
+          console.log(`📍 Loaded ${viewportProps.length} properties for viewport (zoom ${zoom})`);
+          setViewportProperties(viewportProps);
+          setProximityProperties([]); // Clear proximity properties when using viewport
+        }
       } catch (error) {
-        console.error('Error loading viewport properties:', error);
+        console.error('Error loading properties:', error);
       }
     };
 
-    loadViewportProperties();
-  }, [region]);
+    loadProperties();
+  }, [region, userLocation, enableProximityLoading]);
 
-  // Initialize supercluster with viewport properties
+  // Initialize supercluster with properties (viewport or proximity)
   const supercluster = useMemo(() => {
     const cluster = new Supercluster({
       radius: 60,
@@ -137,8 +159,11 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
       minPoints: 2,
     });
 
-    // Convert viewport properties to GeoJSON points
-    const points: ClusterPoint[] = viewportProperties.map(property => ({
+    // Use proximity properties if available, otherwise viewport properties
+    const activeProperties = proximityProperties.length > 0 ? proximityProperties : viewportProperties;
+    
+    // Convert active properties to GeoJSON points
+    const points: ClusterPoint[] = activeProperties.map(property => ({
       type: 'Feature',
       properties: {
         cluster: false,
@@ -152,7 +177,7 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
 
     cluster.load(points);
     return cluster;
-  }, [viewportProperties]);
+  }, [viewportProperties, proximityProperties]);
 
   // Get clusters for current region
   const clusters = useMemo(() => {
@@ -222,7 +247,10 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
       
            <View style={styles.statsContainer}>
              <Text style={styles.statsText}>
-               Showing: {clusters.length} markers | Viewport: {viewportProperties.length} properties
+               {enableProximityLoading && proximityProperties.length > 0 
+                 ? `Showing: ${clusters.length} markers | Proximity: ${proximityProperties.length} properties (200m)`
+                 : `Showing: ${clusters.length} markers | Viewport: ${viewportProperties.length} properties`
+               }
              </Text>
            </View>
     </View>

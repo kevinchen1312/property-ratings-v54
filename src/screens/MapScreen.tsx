@@ -546,16 +546,54 @@ export const MapScreen: React.FC = () => {
       </View>
       
       <ClusteredMapView
-        properties={[]} // Empty array - properties loaded dynamically by viewport
+        properties={[]} // Empty array - properties loaded dynamically
         onPropertyPress={handleMarkerPress}
-        initialRegion={{
+        initialRegion={location ? {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.01, // Closer zoom for proximity view
+          longitudeDelta: 0.01, // Closer zoom for proximity view
+        } : {
           latitude: 37.320, // Centered between Cupertino and San Jose
           longitude: -122.040, // Centered between Cupertino and San Jose  
           latitudeDelta: 0.08, // Wider view to show both cities
           longitudeDelta: 0.08, // Wider view to show both cities
         }}
+        userLocation={location}
+        enableProximityLoading={true}
         style={styles.map}
       />
+      
+      {/* 200m circle around user location - proximity loading indicator */}
+      {location && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            initialRegion={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.02,
+              longitudeDelta: 0.02,
+            }}
+            pointerEvents="none"
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+          >
+            <Circle
+              center={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+              }}
+              radius={200} // 200 meters proximity radius
+              strokeColor="rgba(34, 197, 94, 0.6)" // Green color for user proximity
+              fillColor="rgba(34, 197, 94, 0.1)"
+              strokeWidth={2}
+            />
+          </MapView>
+        </View>
+      )}
       
       {/* 200m circle around selected property - overlay on clustered map */}
       {selectedProperty && (

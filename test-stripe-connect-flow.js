@@ -1,177 +1,251 @@
-// Test script for Stripe Connect payout flow
-const { createClient } = require('@supabase/supabase-js');
+/**
+ * Test Stripe Connect Flow
+ * 
+ * This script tests the complete Stripe Connect integration:
+ * 1. Create Stripe Connect account
+ * 2. Check account status
+ * 3. Create login link
+ * 4. Simulate payout processing
+ * 
+ * Usage: node test-stripe-connect-flow.js
+ */
 
 const SUPABASE_URL = 'https://oyphcjbickujybvbeame.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'your-service-role-key-here';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95cGhjamJpY2t1anlidmJlYW1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgwOTE3NTcsImV4cCI6MjA1MzY2Nzc1N30.hxQZBdQlOWAVDGqS3G4FH3YCX9YnrjB3y1cKdSL5lD4';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+// You need to get a valid access token from your app
+// Login first, then copy the token from localStorage or session
+const ACCESS_TOKEN = process.argv[2];
 
-async function createTestPayouts() {
-  try {
-    console.log('🧪 Creating test pending payouts...');
-    
-    // Get current user (you'll need to replace this with your actual user ID)
-    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
-    
-    if (usersError) {
-      console.error('Error getting users:', usersError);
-      return;
-    }
-    
-    if (!users || users.length === 0) {
-      console.log('❌ No users found. Please sign up in your app first.');
-      return;
-    }
-    
-    const testUser = users[0]; // Use the first user
-    console.log('👤 Using test user:', testUser.email);
-    
-    // Create a test revenue distribution record first
-    const { data: revenueDistribution, error: revenueError } = await supabase
-      .from('revenue_distribution')
-      .insert({
-        purchase_id: 'test-purchase-' + Date.now(),
-        property_id: '364607cd-69fb-4e8a-9b20-4ff4ce6758e7', // Merriman Road property
-        total_revenue: 10.00,
-        platform_share: 8.00,
-        top_contributor_share: 1.00,
-        other_contributors_share: 1.00,
-        top_contributor_id: testUser.id,
-        top_contributor_rating_count: 5
-      })
-      .select()
-      .single();
-    
-    if (revenueError) {
-      console.error('Error creating revenue distribution:', revenueError);
-      return;
-    }
-    
-    console.log('💰 Created revenue distribution:', revenueDistribution.id);
-    
-    // Create test pending payouts
-    const testPayouts = [
-      {
-        revenue_distribution_id: revenueDistribution.id,
-        user_id: testUser.id,
-        payout_amount: 1.50, // $1.50 - above minimum
-        rating_count: 5,
-        is_top_contributor: true,
-        status: 'pending'
-      },
-      {
-        revenue_distribution_id: revenueDistribution.id,
-        user_id: testUser.id,
-        payout_amount: 2.25, // $2.25 - another test payout
-        rating_count: 3,
-        is_top_contributor: false,
-        status: 'pending'
-      }
-    ];
-    
-    const { data: payouts, error: payoutsError } = await supabase
-      .from('contributor_payouts')
-      .insert(testPayouts)
-      .select();
-    
-    if (payoutsError) {
-      console.error('Error creating test payouts:', payoutsError);
-      return;
-    }
-    
-    console.log('✅ Created test payouts:');
-    payouts.forEach(payout => {
-      console.log(`  - $${payout.payout_amount} (${payout.is_top_contributor ? 'Top Contributor' : 'Regular'})`);
-    });
-    
-    console.log(`\n🎯 Total pending: $${payouts.reduce((sum, p) => sum + p.payout_amount, 0)}`);
-    console.log('\n📱 Now go to your app\'s Earnings screen to see these payouts!');
-    
-  } catch (error) {
-    console.error('❌ Test setup failed:', error);
-  }
+if (!ACCESS_TOKEN) {
+  console.error('❌ Please provide an access token as argument');
+  console.error('Usage: node test-stripe-connect-flow.js YOUR_ACCESS_TOKEN');
+  console.error('\nTo get your token:');
+  console.error('1. Login to the app');
+  console.error('2. Open browser console');
+  console.error('3. Run: localStorage.getItem("supabase.auth.token")');
+  console.error('4. Copy the access_token value');
+  process.exit(1);
 }
 
-async function checkStripeConnectStatus() {
+async function testCreateAccount() {
+  console.log('\n🧪 Test 1: Create Stripe Connect Account\n');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/createStripeConnectAccount`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'create' }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error('❌ Failed to create account:', result);
+    return null;
+  }
+
+  console.log('✅ Account created successfully!');
+  console.log('   Account ID:', result.accountId);
+  console.log('   Onboarding URL:', result.onboardingUrl);
+  console.log('   Message:', result.message);
+
+  return result.accountId;
+}
+
+async function testGetStatus(accountId) {
+  console.log('\n🧪 Test 2: Get Account Status\n');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/createStripeConnectAccount`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      action: 'get_status',
+      accountId: accountId
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error('❌ Failed to get status:', result);
+    return;
+  }
+
+  console.log('✅ Account status retrieved!');
+  console.log('   Details submitted:', result.account.details_submitted);
+  console.log('   Charges enabled:', result.account.charges_enabled);
+  console.log('   Payouts enabled:', result.account.payouts_enabled);
+  console.log('   Requirements:', result.account.requirements);
+}
+
+async function testLoginLink(accountId) {
+  console.log('\n🧪 Test 3: Create Login Link\n');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/createStripeConnectAccount`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      action: 'create_login_link',
+      accountId: accountId
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error('❌ Failed to create login link:', result);
+    return;
+  }
+
+  console.log('✅ Login link created!');
+  console.log('   URL:', result.loginUrl);
+  console.log('   Message:', result.message);
+}
+
+async function testProcessPayout() {
+  console.log('\n🧪 Test 4: Process Payout\n');
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/processPayouts`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok && result.error !== 'NO_STRIPE_ACCOUNT') {
+    console.error('❌ Failed to process payout:', result);
+    return;
+  }
+
+  if (result.error === 'NO_STRIPE_ACCOUNT') {
+    console.log('⚠️ No Stripe account connected yet (expected for first run)');
+    console.log('   Complete the onboarding first, then retry');
+    return;
+  }
+
+  if (result.totalPayouts === 0) {
+    console.log('ℹ️ No pending payouts to process');
+    console.log('   This is normal if you haven\'t earned any money yet');
+    return;
+  }
+
+  console.log('✅ Payout processed!');
+  console.log('   Total payouts:', result.totalPayouts);
+  console.log('   Successful:', result.successfulPayouts);
+  console.log('   Failed:', result.failedPayouts);
+  console.log('   Total amount: $' + result.totalAmount.toFixed(2));
+  console.log('   Transfer ID:', result.transferId);
+}
+
+async function checkDatabaseStatus() {
+  console.log('\n🧪 Test 5: Check Database Status\n');
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/user_stripe_accounts?select=*`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'apikey': SUPABASE_ANON_KEY,
+    },
+  });
+
+  const accounts = await response.json();
+
+  if (!response.ok) {
+    console.error('❌ Failed to fetch accounts:', accounts);
+    return;
+  }
+
+  if (accounts.length === 0) {
+    console.log('ℹ️ No Stripe accounts found in database');
+    return;
+  }
+
+  console.log('✅ Found Stripe account in database:');
+  accounts.forEach(account => {
+    console.log('   - Account ID:', account.stripe_account_id);
+    console.log('   - Status:', account.account_status);
+    console.log('   - Payouts enabled:', account.payouts_enabled);
+    console.log('   - Created:', new Date(account.created_at).toLocaleString());
+  });
+}
+
+async function runAllTests() {
+  console.log('🚀 Starting Stripe Connect Integration Tests\n');
+  console.log('=' .repeat(60));
+
   try {
-    console.log('🔍 Checking Stripe Connect status...');
-    
-    const { data: accounts, error } = await supabase
-      .from('user_stripe_accounts')
-      .select('*');
-    
-    if (error) {
-      console.error('Error checking accounts:', error);
-      return;
+    // Test 1: Create account
+    const accountId = await testCreateAccount();
+
+    if (!accountId) {
+      console.log('\n⚠️ Account creation failed or account already exists');
+      console.log('Continuing with status checks...\n');
     }
-    
-    if (!accounts || accounts.length === 0) {
-      console.log('📋 No Stripe Connect accounts found yet.');
-      console.log('💡 Go to Earnings screen and click "Connect Bank Account" to create one.');
-    } else {
-      console.log('🏦 Stripe Connect accounts:');
-      accounts.forEach(account => {
-        console.log(`  - User: ${account.user_id.slice(0, 8)}...`);
-        console.log(`    Status: ${account.account_status}`);
-        console.log(`    Payouts Enabled: ${account.payouts_enabled ? '✅' : '❌'}`);
-        console.log(`    Stripe ID: ${account.stripe_account_id}`);
+
+    // Small delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Test 5: Check database
+    await checkDatabaseStatus();
+
+    // Get account ID from database if creation failed
+    let testAccountId = accountId;
+    if (!testAccountId) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/user_stripe_accounts?select=stripe_account_id&limit=1`, {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
       });
-    }
-  } catch (error) {
-    console.error('❌ Status check failed:', error);
-  }
-}
-
-async function testPayoutProcessing() {
-  try {
-    console.log('💸 Testing payout processing...');
-    
-    // Call the processPayouts Edge Function
-    const response = await fetch('https://oyphcjbickujybvbeame.functions.supabase.co/processPayouts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`
+      const accounts = await response.json();
+      if (accounts && accounts.length > 0) {
+        testAccountId = accounts[0].stripe_account_id;
       }
-    });
-    
-    const result = await response.json();
-    
-    if (response.ok) {
-      console.log('✅ Payout processing result:', result);
-    } else {
-      console.error('❌ Payout processing failed:', result);
     }
-    
+
+    if (testAccountId) {
+      // Test 2: Get status
+      await testGetStatus(testAccountId);
+
+      // Small delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Test 3: Create login link
+      await testLoginLink(testAccountId);
+    }
+
+    // Small delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Test 4: Process payout
+    await testProcessPayout();
+
+    console.log('\n' + '='.repeat(60));
+    console.log('✅ All tests completed!\n');
+
+    console.log('📝 Next Steps:');
+    console.log('1. If account was created, complete the onboarding at the URL above');
+    console.log('2. Create some test earnings (see STRIPE-CONNECT-DEPLOYMENT-GUIDE.md)');
+    console.log('3. Request a payout from the app');
+    console.log('4. Check Stripe Dashboard to see the transfer\n');
+
   } catch (error) {
-    console.error('❌ Payout test failed:', error);
+    console.error('\n❌ Test failed with error:', error);
+    process.exit(1);
   }
 }
 
-// Main menu
-async function main() {
-  const args = process.argv.slice(2);
-  const command = args[0];
-  
-  switch (command) {
-    case 'create-payouts':
-      await createTestPayouts();
-      break;
-    case 'check-status':
-      await checkStripeConnectStatus();
-      break;
-    case 'process-payouts':
-      await testPayoutProcessing();
-      break;
-    default:
-      console.log('🧪 Stripe Connect Test Commands:');
-      console.log('  node test-stripe-connect-flow.js create-payouts   - Create test pending payouts');
-      console.log('  node test-stripe-connect-flow.js check-status     - Check Stripe Connect accounts');
-      console.log('  node test-stripe-connect-flow.js process-payouts  - Test payout processing');
-      console.log('\n💡 Start with "create-payouts" to set up test data!');
-  }
-}
-
-if (require.main === module) {
-  main();
-}
+runAllTests();

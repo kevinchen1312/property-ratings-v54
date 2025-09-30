@@ -62,16 +62,35 @@ serve(async (req) => {
           .single();
 
         if (existingAccount) {
-          // For existing accounts, create a working onboarding link
-          return new Response(
-            JSON.stringify({
-              success: true,
-              onboardingUrl: 'https://connect.stripe.com/setup/express',
-              accountId: existingAccount.stripe_account_id,
-              message: 'Continue setup with existing account',
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+          // For existing accounts, create a fresh onboarding link to continue/complete setup
+          try {
+            console.log('Creating onboarding link for existing account:', existingAccount.stripe_account_id);
+            
+            // Use Stripe Express Dashboard as return URL for mobile apps
+            // This is a real Stripe page that always works
+            const returnUrl = 'https://dashboard.stripe.com/express/overview';
+            const refreshUrl = 'https://dashboard.stripe.com/express/overview';
+            
+            const accountLink = await stripe.accountLinks.create({
+              account: existingAccount.stripe_account_id,
+              refresh_url: refreshUrl,
+              return_url: returnUrl,
+              type: 'account_onboarding',
+            });
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                onboardingUrl: accountLink.url,
+                accountId: existingAccount.stripe_account_id,
+                message: 'Continue setup with existing account',
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          } catch (linkError) {
+            console.error('Failed to create account link for existing account:', linkError);
+            throw new Error('Failed to generate onboarding link. Please contact support.');
+          }
         }
 
         // Try to create real Stripe Connect account with minimal setup
@@ -81,6 +100,10 @@ serve(async (req) => {
             type: 'express',
             country: 'US',
             email: user.email,
+            business_profile: {
+              name: 'Leadsong Property Ratings',
+              url: 'https://leadsong.com',
+            },
             // Minimal setup - just the essentials
           });
 
@@ -106,10 +129,15 @@ serve(async (req) => {
           }
 
           // Create real onboarding link
+          // Use Stripe Express Dashboard as return URL for mobile apps
+          // This is a real Stripe page that always works
+          const returnUrl = 'https://dashboard.stripe.com/express/overview';
+          const refreshUrl = 'https://dashboard.stripe.com/express/overview';
+          
           const accountLink = await stripe.accountLinks.create({
             account: account.id,
-            refresh_url: `${req.headers.get('origin')}/earnings?refresh=true`,
-            return_url: `${req.headers.get('origin')}/earnings?setup=complete`,
+            refresh_url: refreshUrl,
+            return_url: returnUrl,
             type: 'account_onboarding',
           });
 
@@ -139,6 +167,10 @@ serve(async (req) => {
               type: 'express',
               country: 'US',
               email: user.email,
+              business_profile: {
+                name: 'Leadsong Property Ratings',
+                url: 'https://leadsong.com',
+              },
               // Minimal setup for testing
             });
 
@@ -164,10 +196,15 @@ serve(async (req) => {
             }
 
             // Create onboarding link for test account
+            // Use Stripe Express Dashboard as return URL for mobile apps
+            // This is a real Stripe page that always works
+            const returnUrl = 'https://dashboard.stripe.com/express/overview';
+            const refreshUrl = 'https://dashboard.stripe.com/express/overview';
+            
             const accountLink = await stripe.accountLinks.create({
               account: testAccount.id,
-              refresh_url: `${req.headers.get('origin')}/earnings?refresh=true`,
-              return_url: `${req.headers.get('origin')}/earnings?setup=complete`,
+              refresh_url: refreshUrl,
+              return_url: returnUrl,
               type: 'account_onboarding',
             });
 
@@ -209,9 +246,9 @@ serve(async (req) => {
             return new Response(
               JSON.stringify({
                 success: true,
-                onboardingUrl: 'https://connect.stripe.com/setup/express',
+                onboardingUrl: 'https://dashboard.stripe.com/test/connect/accounts/overview',
                 accountId: demoAccountId,
-                message: '🧪 Demo account created for testing. Stripe Connect needs to be enabled in your dashboard for real accounts.',
+                message: '🧪 Demo account created for testing. Enable Stripe Connect in your Stripe Dashboard to create real accounts.',
                 isDemo: true,
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

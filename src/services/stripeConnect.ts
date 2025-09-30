@@ -220,7 +220,7 @@ export async function getPayoutHistory(): Promise<any[]> {
         )
       `)
       .eq('user_id', session.session.user.id)
-      .in('status', ['completed', 'failed'])
+      .in('status', ['paid', 'completed', 'failed'])
       .order('processed_at', { ascending: false });
 
     if (error) {

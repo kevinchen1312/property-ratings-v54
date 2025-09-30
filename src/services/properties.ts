@@ -108,6 +108,49 @@ export const getPropertiesInBounds = async (bounds: {
 };
 
 /**
+ * Fetch properties within a specific radius from a center point
+ * @param centerLat Center latitude
+ * @param centerLng Center longitude  
+ * @param radiusMeters Radius in meters (default: 200m)
+ * @returns Promise<Property[]>
+ */
+export const getPropertiesWithinRadius = async (
+  centerLat: number,
+  centerLng: number,
+  radiusMeters: number = 200
+): Promise<Property[]> => {
+  // Calculate approximate bounding box for initial filtering
+  // 1 degree latitude ≈ 111,320 meters
+  // 1 degree longitude ≈ 111,320 * cos(latitude) meters
+  const latDelta = radiusMeters / 111320;
+  const lngDelta = radiusMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
+
+  const { data, error } = await supabase
+    .from('property')
+    .select('id, name, address, lat, lng, created_at')
+    .gte('lat', centerLat - latDelta)
+    .lte('lat', centerLat + latDelta)
+    .gte('lng', centerLng - lngDelta)
+    .lte('lng', centerLng + lngDelta)
+    .order('address')
+    .limit(1000); // Reasonable limit for proximity loading
+
+  if (error) {
+    throw new Error(`Failed to fetch properties within radius: ${error.message}`);
+  }
+
+  if (!data) return [];
+
+  // Filter by exact distance using Haversine formula
+  const { calculateDistance } = await import('../lib/ratingService');
+  
+  return data.filter(property => {
+    const distance = calculateDistance(centerLat, centerLng, property.lat, property.lng);
+    return distance <= radiusMeters;
+  });
+};
+
+/**
  * Search properties by address or name
  * @param searchTerm Search term to match against name or address
  * @returns Promise<Property[]>
