@@ -8,10 +8,19 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getUserPendingPayouts, getUserContributorStats } from '../services/revenueSharing';
-import { getPayoutHistory } from '../services/stripeConnect';
+import { 
+  getPayoutHistory, 
+  getStripeConnectStatus, 
+  createStripeConnectAccount,
+  refreshStripeAccountStatus,
+  createStripeLoginLink,
+  getUserStripeAccount,
+  requestPayout
+} from '../services/stripeConnect';
 
 interface PendingPayout {
   id: string;
@@ -34,12 +43,14 @@ export const EarningsScreen: React.FC = () => {
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<any>(null);
+  const [settingUpAccount, setSettingUpAccount] = useState(false);
 
   const loadData = async () => {
     try {
       console.log('🔄 Loading earnings data...');
       
-      const [payoutsData, statsData, historyData] = await Promise.all([
+      const [payoutsData, statsData, historyData, connectStatus] = await Promise.all([
         getUserPendingPayouts().catch(err => {
           console.error('Error loading pending payouts:', err);
           return [];
@@ -52,17 +63,23 @@ export const EarningsScreen: React.FC = () => {
           console.error('Error loading payout history:', err);
           return [];
         }),
+        getStripeConnectStatus().catch(err => {
+          console.error('Error loading Stripe Connect status:', err);
+          return { has_account: false, account_status: 'none', payouts_enabled: false, stripe_account_id: null };
+        }),
       ]);
 
       console.log('📊 Loaded data:', {
         payouts: payoutsData.length,
         stats: statsData.length,
-        history: historyData.length
+        history: historyData.length,
+        stripeConnect: connectStatus
       });
 
       setPendingPayouts(payoutsData);
       setContributorStats(statsData);
       setPayoutHistory(historyData);
+      setStripeConnectStatus(connectStatus);
     } catch (error) {
       console.error('Error loading earnings data:', error);
       Alert.alert('Error', 'Failed to load earnings data');
@@ -90,11 +107,165 @@ export const EarningsScreen: React.FC = () => {
     loadData();
   };
 
-  const handleCashOutSetup = () => {
+  const handleCashOutSetup = async () => {
+    if (settingUpAccount) return;
+
+    try {
+      setSettingUpAccount(true);
+
+      if (!stripeConnectStatus?.has_account) {
+        // Create new Stripe Connect account
+        console.log('Creating new Stripe Connect account...');
+        console.log('Stripe Connect Status:', stripeConnectStatus);
+        const result = await createStripeConnectAccount();
+        console.log('Create account result:', result);
+        const { onboardingUrl } = result;
+        
+        Alert.alert(
+          'Set Up Bank Account',
+          'You\'ll be redirected to Stripe to securely connect your bank account for receiving payments.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Continue', 
+              onPress: async () => {
+                try {
+                  console.log('Opening Stripe Connect onboarding:', onboardingUrl);
+                  const supported = await Linking.canOpenURL(onboardingUrl);
+                  if (supported) {
+                    await Linking.openURL(onboardingUrl);
+                  } else {
+                    Alert.alert('Error', 'Cannot open Stripe Connect URL');
+                  }
+                } catch (error) {
+                  console.error('Error opening URL:', error);
+                  Alert.alert('Error', 'Failed to open Stripe Connect');
+                }
+              }
+            }
+          ]
+        );
+      } else if (!stripeConnectStatus.payouts_enabled) {
+        // Account exists but needs completion
+        console.log('Refreshing account status...');
+        await refreshStripeAccountStatus(stripeConnectStatus.stripe_account_id);
+        
+        if (stripeConnectStatus.account_status === 'pending') {
+          Alert.alert(
+            'Complete Account Setup',
+            'Your bank account setup is incomplete. Please complete the setup process.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Complete Setup', 
+                onPress: async () => {
+                  try {
+                    const { onboardingUrl } = await createStripeConnectAccount();
+                    console.log('Opening Stripe Connect onboarding:', onboardingUrl);
+                    const supported = await Linking.canOpenURL(onboardingUrl);
+                    if (supported) {
+                      await Linking.openURL(onboardingUrl);
+                    } else {
+                      Alert.alert('Error', 'Cannot open Stripe Connect URL');
+                    }
+                  } catch (error) {
+                    console.error('Error opening URL:', error);
+                    Alert.alert('Error', 'Failed to open Stripe Connect');
+                  }
+                }
+              }
+            ]
+          );
+        } else {
+          Alert.alert(
+            'Account Under Review',
+            'Your bank account is being reviewed by Stripe. This usually takes 1-2 business days.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        // Account is ready - show dashboard
+        const loginUrl = await createStripeLoginLink(stripeConnectStatus.stripe_account_id);
+        Alert.alert(
+          'Manage Bank Account',
+          'View your Stripe Express dashboard to manage your bank account and view payout history.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Dashboard', 
+              onPress: async () => {
+                try {
+                  console.log('Opening Stripe dashboard:', loginUrl);
+                  const supported = await Linking.canOpenURL(loginUrl);
+                  if (supported) {
+                    await Linking.openURL(loginUrl);
+                  } else {
+                    Alert.alert('Error', 'Cannot open Stripe dashboard URL');
+                  }
+                } catch (error) {
+                  console.error('Error opening dashboard URL:', error);
+                  Alert.alert('Error', 'Failed to open Stripe dashboard');
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Cash out setup error:', error);
+      console.error('Error details:', error.message);
+      console.error('Error stack:', error.stack);
+      Alert.alert('Error', `Failed to set up cash out: ${error.message}`);
+    } finally {
+      setSettingUpAccount(false);
+    }
+  };
+
+  const handleRequestPayout = async () => {
+    if (!stripeConnectStatus?.payouts_enabled) {
+      Alert.alert(
+        'Connect to Stripe First',
+        'Please connect your bank account using the "Stripe Connection" button above to receive payments.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Connect Now', onPress: handleCashOutSetup }
+        ]
+      );
+      return;
+    }
+
+    const totalEarnings = calculateTotalEarnings();
+    if (totalEarnings < 1.00) {
+      Alert.alert(
+        'Minimum Payout Amount',
+        'You need at least $1.00 in earnings to request a payout.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     Alert.alert(
-      'Cash Out Setup',
-      'Bank account setup will be available soon. Your earnings are safe and will be paid once setup is complete.',
-      [{ text: 'OK' }]
+      'Request Payout',
+      `Request payout of ${formatAmount(totalEarnings)}? This will transfer your earnings to your connected bank account.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Request Payout', 
+          onPress: async () => {
+            try {
+              const result = await requestPayout();
+              Alert.alert(
+                'Payout Requested',
+                result.message || 'Your payout has been requested and will be processed within 1-2 business days.',
+                [{ text: 'OK', onPress: loadData }]
+              );
+            } catch (error) {
+              console.error('Payout request error:', error);
+              Alert.alert('Error', 'Failed to request payout. Please try again.');
+            }
+          }
+        }
+      ]
     );
   };
 
@@ -143,14 +314,39 @@ export const EarningsScreen: React.FC = () => {
         </Text>
       </View>
 
-      {/* Cash Out Setup */}
-      {totalEarnings > 0 && (
-        <View style={styles.actionContainer}>
-          <TouchableOpacity style={styles.setupButton} onPress={handleCashOutSetup}>
-            <Text style={styles.setupButtonText}>Set Up Bank Account</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Bank Account Status & Actions */}
+      <View style={styles.actionContainer}>
+        {/* Always show Stripe Connection button */}
+        <TouchableOpacity 
+          style={[styles.setupButton, settingUpAccount && styles.disabledButton]} 
+          onPress={handleCashOutSetup}
+          disabled={settingUpAccount}
+        >
+          <Text style={styles.setupButtonText}>
+            {settingUpAccount ? 'Setting Up...' : '🔗 Stripe Connection'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Always show Request Payout button */}
+        <TouchableOpacity 
+          style={[styles.setupButton, styles.successButton, { marginTop: 12 }]} 
+          onPress={handleRequestPayout}
+          disabled={totalEarnings < 1.00}
+        >
+          <Text style={styles.setupButtonText}>
+            💰 Request Payout ({formatAmount(totalEarnings)})
+          </Text>
+        </TouchableOpacity>
+
+        {/* Status text based on connection state */}
+        {stripeConnectStatus?.payouts_enabled ? (
+          <Text style={styles.statusText}>✅ Bank account connected and verified</Text>
+        ) : stripeConnectStatus?.has_account ? (
+          <Text style={styles.statusText}>⚠️ Bank setup incomplete</Text>
+        ) : (
+          <Text style={styles.statusText}>🏦 Connect your bank account to receive payments</Text>
+        )}
+      </View>
 
       {/* How Earnings Work */}
       <View style={styles.infoCard}>
@@ -330,6 +526,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
+  },
+  warningButton: {
+    backgroundColor: '#FF9800',
+  },
+  successButton: {
+    backgroundColor: '#2E7D32',
+  },
+  secondaryButton: {
+    backgroundColor: '#666',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 8,
   },
   infoCard: {
     backgroundColor: '#E8F5E8',

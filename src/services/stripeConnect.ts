@@ -234,3 +234,43 @@ export async function getPayoutHistory(): Promise<any[]> {
     throw error;
   }
 }
+
+/**
+ * Request payout for user's pending earnings
+ */
+export async function requestPayout(): Promise<{ success: boolean; message: string }> {
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+
+    const response = await fetch(`https://${SUPABASE_REF}.functions.supabase.co/processPayouts`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': `Bearer ${token}` 
+      },
+      body: JSON.stringify({ 
+        action: 'process_user',
+        userId: session.session.user.id
+      }),
+    });
+
+    const result = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to request payout');
+    }
+
+    return {
+      success: true,
+      message: result.message || 'Payout requested successfully'
+    };
+  } catch (error) {
+    console.error('Request payout error:', error);
+    throw error;
+  }
+}

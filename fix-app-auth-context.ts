@@ -1,85 +1,6 @@
-import { supabase } from '../lib/supabase';
-import { Alert } from 'react-native';
+// Enhanced rating submission with better auth debugging
+// Replace the submitRatings function in src/services/ratings.ts with this version
 
-export interface RatingSubmission {
-  propertyId: string;
-  noise: number;
-  safety: number;
-  cleanliness: number;
-  userLat: number;
-  userLng: number;
-}
-
-/**
- * Check if user has already rated this property today
- */
-export const checkDailyRatingLimit = async (propertyId: string): Promise<boolean> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) {
-    return false;
-  }
-
-  const today = new Date().toISOString().split('T')[0]; // Get YYYY-MM-DD format
-  
-  const { data, error } = await supabase
-    .from('rating')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('property_id', propertyId)
-    .gte('created_at', `${today}T00:00:00.000Z`)
-    .lt('created_at', `${today}T23:59:59.999Z`)
-    .limit(1);
-
-  if (error) {
-    console.error('Error checking daily rating limit:', error);
-    return false;
-  }
-
-  return (data && data.length > 0);
-};
-
-/**
- * Check if user has rated this property within the last hour (any attribute)
- * Returns both the rate limit status and the timestamp of the last rating
- */
-export const checkHourlyRateLimit = async (propertyId: string): Promise<{
-  isRateLimited: boolean;
-  lastRatingTime?: string;
-}> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) {
-    return { isRateLimited: false };
-  }
-
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  
-  const { data, error } = await supabase
-    .from('rating')
-    .select('id, created_at')
-    .eq('user_id', user.id)
-    .eq('property_id', propertyId)
-    .gte('created_at', oneHourAgo)
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error('Error checking hourly rate limit:', error);
-    return { isRateLimited: false };
-  }
-
-  const hasRecentRating = data && data.length > 0;
-  return {
-    isRateLimited: hasRecentRating,
-    lastRatingTime: hasRecentRating ? data[0].created_at : undefined
-  };
-};
-
-/**
- * Submit ratings for a property (only non-zero ratings)
- * Handles proximity validation and duplicate rating errors with user-friendly messages
- */
 export const submitRatings = async (submission: RatingSubmission): Promise<void> => {
   console.log('🔍 Starting rating submission...', submission);
   
@@ -175,6 +96,7 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
     userId: userId
   });
   
+  // Try the insert with enhanced error logging
   const { data, error } = await supabase
     .from('rating')
     .insert(ratings)
@@ -191,30 +113,8 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
   if (error) {
     console.error('❌ Database error:', error);
     
-    // Handle specific database constraint errors with user-friendly messages
-    
-    // Proximity validation error (from trigger)
-    if (error.message.includes('within 200 meters')) {
-      Alert.alert(
-        'Too Far Away',
-        'You must be within 200 meters of the property to submit a rating. Please get closer and try again.',
-        [{ text: 'OK' }]
-      );
-      throw new Error('Not within required proximity');
-    }
-    
-    // Duplicate rating error (from unique constraint)
-    if (error.code === '23505' || error.message.includes('duplicate key') || error.message.includes('already exists')) {
-      Alert.alert(
-        'Already Rated Today',
-        'You have already rated this property today. You can only rate each property once per day.',
-        [{ text: 'OK' }]
-      );
-      throw new Error('Already rated today');
-    }
-    
-    // Authentication/permission errors
-    if (error.code === '42501' || error.message.includes('permission denied')) {
+    // Enhanced error handling with more specific debugging
+    if (error.code === '42501' || error.message?.includes('permission denied')) {
       console.error('🚫 Permission denied - this suggests auth context is lost during insert');
       
       Alert.alert(
@@ -234,37 +134,35 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
       throw new Error('Permission denied - session expired');
     }
     
-    // Invalid property ID
-    if (error.code === '23503' || error.message.includes('foreign key')) {
+    // Handle other errors as before...
+    if (error.message?.includes('within 200 meters')) {
       Alert.alert(
-        'Property Not Found',
-        'The selected property could not be found. Please try selecting a different property.',
+        'Too Far Away',
+        'You must be within 200 meters of the property to submit a rating. Please get closer and try again.',
         [{ text: 'OK' }]
       );
-      throw new Error('Invalid property');
+      throw new Error('Not within required proximity');
     }
     
-    // Network/connection errors
-    if (error.message.includes('network') || error.message.includes('timeout') || error.message.includes('fetch')) {
+    if (error.code === '23505' || error.message?.includes('duplicate key')) {
       Alert.alert(
-        'Connection Error',
-        'Unable to submit ratings due to network issues. Please check your internet connection and try again.',
-        [{ text: 'Retry', style: 'default' }, { text: 'Cancel', style: 'cancel' }]
+        'Already Rated Today',
+        'You have already rated this property today. You can only rate each property once per day.',
+        [{ text: 'OK' }]
       );
-      throw new Error('Network error');
+      throw new Error('Already rated today');
     }
     
-    // Generic database error
-    console.error('Database error submitting ratings:', error);
+    // Generic error
     Alert.alert(
       'Submission Failed',
-      'Unable to submit your ratings at this time. Please try again in a moment.',
+      `Unable to submit ratings: ${error.message}`,
       [{ text: 'OK' }]
     );
     throw new Error(`Database error: ${error.message}`);
   }
 
-  // Success toast
+  // Success
   Alert.alert(
     'Success! 🎉',
     'Your ratings have been submitted successfully. Thank you for your feedback!',

@@ -1,0 +1,70 @@
+{
+  "timestamp": "2025-09-29T00:44:10.232Z",
+  "totalProperties": 0,
+  "chunks": [
+    {
+      "id": "CHUNK_001",
+      "name": "Manhattan, New York",
+      "status": "completed",
+      "actualProperties": 0,
+      "targetProperties": 500000,
+      "completionTime": 35190270
+    },
+    {
+      "id": "CHUNK_002",
+      "name": "Brooklyn, New York",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 600000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_003",
+      "name": "Queens, New York",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 500000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_004",
+      "name": "Los Angeles Central, California",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 400000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_005",
+      "name": "Chicago Central, Illinois",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 350000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_006",
+      "name": "Houston Central, Texas",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 300000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_007",
+      "name": "Philadelphia Central, Pennsylvania",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 250000,
+      "completionTime": null
+    },
+    {
+      "id": "CHUNK_008",
+      "name": "Phoenix Central, Arizona",
+      "status": "pending",
+      "actualProperties": 0,
+      "targetProperties": 200000,
+      "completionTime": null
+    }
+  ]
+}
