@@ -13,6 +13,7 @@ export interface Property {
   lng: number;
   geom?: any;
   created_at: string;
+  osm_id?: string | null; // OpenStreetMap ID (e.g., "node/123456" or "way/789012")
   // Optional rating data
   avg_rating?: number;
   rating_count?: number;

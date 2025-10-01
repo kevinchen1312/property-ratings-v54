@@ -168,3 +168,188 @@ export const searchProperties = async (searchTerm: string): Promise<Property[]> 
 
   return data || [];
 };
+
+/**
+ * Upsert a property from OSM data
+ * If osm_id exists, update the property. Otherwise, insert new property.
+ * @param osmProperty Partial property with OSM data (must include osm_id)
+ * @returns Promise<Property> The created or updated property
+ */
+export const upsertOSMProperty = async (
+  osmProperty: Partial<Property> & { osm_id: string }
+): Promise<Property> => {
+  const { data, error } = await supabase.rpc('upsert_osm_property', {
+    p_osm_id: osmProperty.osm_id,
+    p_name: osmProperty.name || 'Unknown',
+    p_address: osmProperty.address || 'Unknown',
+    p_lat: osmProperty.lat!,
+    p_lng: osmProperty.lng!,
+  });
+
+  if (error) {
+    throw new Error(`Failed to upsert OSM property: ${error.message}`);
+  }
+
+  // Fetch the complete property record
+  const propertyId = data;
+  const property = await getProperty(propertyId);
+  
+  if (!property) {
+    throw new Error('Failed to fetch upserted property');
+  }
+
+  return property;
+};
+
+/**
+ * Batch upsert multiple OSM properties
+ * @param osmProperties Array of partial properties with OSM data
+ * @returns Promise<Property[]> Array of created/updated properties
+ */
+export const upsertOSMProperties = async (
+  osmProperties: Array<Partial<Property> & { osm_id: string }>
+): Promise<Property[]> => {
+  const properties: Property[] = [];
+
+  // Deduplicate by osm_id before processing
+  const uniqueProps = new Map<string, Partial<Property> & { osm_id: string }>();
+  osmProperties.forEach(prop => {
+    uniqueProps.set(prop.osm_id, prop);
+  });
+  
+  const deduplicatedProps = Array.from(uniqueProps.values());
+  
+  if (deduplicatedProps.length < osmProperties.length) {
+    console.log(`🔄 Deduplicated ${osmProperties.length} → ${deduplicatedProps.length} properties`);
+  }
+
+  // Process in batches to avoid overwhelming the database
+  const batchSize = 10;
+  for (let i = 0; i < deduplicatedProps.length; i += batchSize) {
+    const batch = deduplicatedProps.slice(i, i + batchSize);
+    
+    // Process batch with error handling for individual properties
+    const batchResults = await Promise.allSettled(
+      batch.map(osmProp => upsertOSMProperty(osmProp))
+    );
+    
+    // Only keep successful results
+    const successfulResults = batchResults
+      .filter((result): result is PromiseFulfilledResult<Property> => result.status === 'fulfilled')
+      .map(result => result.value);
+    
+    properties.push(...successfulResults);
+    
+    const failedCount = batchResults.length - successfulResults.length;
+    if (failedCount > 0) {
+      console.warn(`⚠️ Batch ${Math.floor(i / batchSize) + 1}: ${successfulResults.length} succeeded, ${failedCount} failed`);
+    } else {
+      console.log(`📝 Upserted batch ${Math.floor(i / batchSize) + 1}: ${successfulResults.length} properties`);
+    }
+  }
+
+  return properties;
+};
+
+/**
+ * Get properties from OSM and database combined
+ * First checks database for existing properties, then queries OSM for new ones
+ * @param latitude Center latitude
+ * @param longitude Center longitude
+ * @param radiusMeters Radius in meters (default: 100m)
+ * @returns Promise<Property[]> Combined array of properties
+ */
+export const getPropertiesOSMBased = async (
+  latitude: number,
+  longitude: number,
+  radiusMeters: number = 100
+): Promise<Property[]> => {
+  try {
+    // Step 1: Get existing properties from database within radius
+    const existingProperties = await getPropertiesWithinRadius(latitude, longitude, radiusMeters);
+    console.log(`📍 Found ${existingProperties.length} existing properties in database`);
+
+    // Step 2: Fetch OSM data for the same area
+    const { getOSMPropertiesNearLocation } = await import('./osm');
+    const osmProperties = await getOSMPropertiesNearLocation(latitude, longitude, radiusMeters);
+    console.log(`🌐 Found ${osmProperties.length} properties from OSM`);
+
+    // Step 3: Find new properties (not in database)
+    const existingOSMIds = new Set(
+      existingProperties
+        .filter(p => p.osm_id)
+        .map(p => p.osm_id!)
+    );
+    
+    // Also check by address to prevent duplicates
+    const existingAddresses = new Set(
+      existingProperties.map(p => p.address.toLowerCase().trim())
+    );
+
+    const newOSMProperties = osmProperties.filter(
+      osmProp => {
+        if (!osmProp.osm_id) return false;
+        // Skip if OSM ID already exists
+        if (existingOSMIds.has(osmProp.osm_id)) return false;
+        // Skip if address already exists (prevent duplicates)
+        if (osmProp.address && existingAddresses.has(osmProp.address.toLowerCase().trim())) {
+          console.log(`⚠️ Skipping duplicate address: ${osmProp.address}`);
+          return false;
+        }
+        return true;
+      }
+    ) as Array<Partial<Property> & { osm_id: string }>;
+
+    console.log(`🆕 Found ${newOSMProperties.length} new properties to save`);
+
+    // Step 4: Save new properties to database (with error handling)
+    let savedProperties: Property[] = [];
+    if (newOSMProperties.length > 0) {
+      try {
+        savedProperties = await upsertOSMProperties(newOSMProperties);
+        console.log(`💾 Saved ${savedProperties.length} new properties to database`);
+      } catch (error) {
+        console.warn(`⚠️ Some properties failed to save, continuing with existing data`, error);
+      }
+    }
+
+    // Step 5: Combine and return all properties
+    const allProperties = [...existingProperties, ...savedProperties];
+    console.log(`✅ Returning ${allProperties.length} total properties`);
+    
+    return allProperties;
+  } catch (error) {
+    // Silently fallback to database-only if OSM fails
+    try {
+      return await getPropertiesWithinRadius(latitude, longitude, radiusMeters);
+    } catch (fallbackError) {
+      return []; // Return empty array as last resort
+    }
+  }
+};
+
+/**
+ * Delete properties within a radius (for testing)
+ * @param latitude Center latitude
+ * @param longitude Center longitude
+ * @param radiusMeters Radius in meters
+ * @returns Promise<number> Number of properties deleted
+ */
+export const deletePropertiesWithinRadius = async (
+  latitude: number,
+  longitude: number,
+  radiusMeters: number
+): Promise<number> => {
+  const { data, error } = await supabase.rpc('delete_properties_within_radius', {
+    center_lat: latitude,
+    center_lng: longitude,
+    radius_meters: radiusMeters,
+  });
+
+  if (error) {
+    throw new Error(`Failed to delete properties: ${error.message}`);
+  }
+
+  console.log(`🗑️ Deleted ${data} properties within ${radiusMeters}m of (${latitude}, ${longitude})`);
+  return data as number;
+};

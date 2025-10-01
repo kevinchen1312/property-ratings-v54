@@ -32,7 +32,7 @@ export const checkDailyRatingLimit = async (propertyId: string): Promise<boolean
     .limit(1);
 
   if (error) {
-    console.error('Error checking daily rating limit:', error);
+    // Silently handle - non-fatal
     return false;
   }
 
@@ -65,7 +65,7 @@ export const checkHourlyRateLimit = async (propertyId: string): Promise<{
     .limit(1);
 
   if (error) {
-    console.error('Error checking hourly rate limit:', error);
+    // Silently handle - non-fatal
     return { isRateLimited: false };
   }
 

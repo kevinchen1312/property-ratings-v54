@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
-import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
+import { View, Text, StyleSheet } from 'react-native';
+import MapView, { Marker, Region, Circle } from 'react-native-maps';
 import Supercluster from 'supercluster';
 import { Property } from '../lib/types';
 
@@ -10,7 +10,10 @@ interface ClusteredMapViewProps {
   initialRegion?: Region;
   style?: any;
   userLocation?: { latitude: number; longitude: number } | null;
+  selectedProperty?: Property | null;
   enableProximityLoading?: boolean;
+  ratedPropertyIds?: Set<string>; // Track which properties user has rated
+  ref?: React.RefObject<MapView>;
 }
 
 interface ClusterPoint {
@@ -31,9 +34,10 @@ interface ClusterPoint {
 interface ClusterMarkerProps {
   point: ClusterPoint;
   onPress: (point: ClusterPoint) => void;
+  isRated?: boolean;
 }
 
-const ClusterMarker: React.FC<ClusterMarkerProps> = ({ point, onPress }) => {
+const ClusterMarker: React.FC<ClusterMarkerProps> = ({ point, onPress, isRated }) => {
   const { cluster, point_count, property } = point.properties;
   const [longitude, latitude] = point.geometry.coordinates;
 
@@ -64,8 +68,7 @@ const ClusterMarker: React.FC<ClusterMarkerProps> = ({ point, onPress }) => {
       key={`property-${property?.id}`}
       coordinate={{ latitude, longitude }}
       onPress={() => onPress(point)}
-      title={property?.name}
-      description={property?.address}
+      pinColor={isRated ? '#999999' : 'red'} // Gray for rated, red for unrated
     />
   );
 };
@@ -78,15 +81,17 @@ const getClusterColor = (pointCount: number): string => {
   return '#00ff00';
 };
 
-export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
+export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>(({
   properties,
   onPropertyPress,
   initialRegion,
   style,
   userLocation,
-  enableProximityLoading = false
-}) => {
-  const mapRef = useRef<MapView>(null);
+  selectedProperty,
+  enableProximityLoading = false,
+  ratedPropertyIds = new Set()
+}, ref) => {
+  const mapRef = ref as React.RefObject<MapView> || useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
     initialRegion || {
       latitude: 37.3135,
@@ -107,15 +112,15 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
       
       try {
         if (enableProximityLoading && userLocation) {
-          // PROXIMITY-BASED LOADING: Load properties within 200m of user
-          const { getPropertiesWithinRadius } = await import('../services/properties');
-          const proximityProps = await getPropertiesWithinRadius(
+          // OSM-BASED PROXIMITY LOADING: Query OSM and database for properties within 75m
+          const { getPropertiesOSMBased } = await import('../services/properties');
+          const proximityProps = await getPropertiesOSMBased(
             userLocation.latitude, 
             userLocation.longitude, 
-            200 // 200 meters radius
+            75 // 75 meters radius - queries OSM + database
           );
           
-          console.log(`📍 Loaded ${proximityProps.length} properties within 200m of user location`);
+          console.log(`📍 Loaded ${proximityProps.length} properties within 75m (OSM + database)`);
           setProximityProperties(proximityProps);
           setViewportProperties([]); // Clear viewport properties when using proximity
         } else {
@@ -143,7 +148,7 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
           setProximityProperties([]); // Clear proximity properties when using viewport
         }
       } catch (error) {
-        console.error('Error loading properties:', error);
+        // Silently handle - non-fatal
       }
     };
 
@@ -233,29 +238,67 @@ export const ClusteredMapView: React.FC<ClusteredMapViewProps> = ({
         showsCompass
         showsScale
         loadingEnabled
-        rotateEnabled={false}
+        rotateEnabled={true}  // Enable rotation
         pitchEnabled={false}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        zoomTapEnabled={true}
+        zoomControlEnabled={true}
       >
-        {clusters.map((point, index) => (
-          <ClusterMarker
-            key={`marker-${index}`}
-            point={point as ClusterPoint}
-            onPress={handleMarkerPress}
+        {/* 75m circle around user location */}
+        {userLocation && (
+          <Circle
+            center={{
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+            }}
+            radius={75}
+            strokeColor="rgba(34, 197, 94, 0.6)"
+            fillColor="rgba(34, 197, 94, 0.1)"
+            strokeWidth={2}
           />
-        ))}
+        )}
+        
+        {/* 200m circle around selected property */}
+        {selectedProperty && (
+          <Circle
+            center={{
+              latitude: selectedProperty.lat,
+              longitude: selectedProperty.lng,
+            }}
+            radius={200}
+            strokeColor="rgba(255, 59, 48, 0.6)"
+            fillColor="rgba(255, 59, 48, 0.1)"
+            strokeWidth={2}
+          />
+        )}
+        
+        {clusters.map((point, index) => {
+          const isRated = !point.properties.cluster && 
+                         point.properties.property?.id && 
+                         ratedPropertyIds.has(point.properties.property.id);
+          return (
+            <ClusterMarker
+              key={`marker-${index}`}
+              point={point as ClusterPoint}
+              onPress={handleMarkerPress}
+              isRated={isRated}
+            />
+          );
+        })}
       </MapView>
       
-           <View style={styles.statsContainer}>
-             <Text style={styles.statsText}>
-               {enableProximityLoading && proximityProperties.length > 0 
-                 ? `Showing: ${clusters.length} markers | Proximity: ${proximityProperties.length} properties (200m)`
-                 : `Showing: ${clusters.length} markers | Viewport: ${viewportProperties.length} properties`
-               }
-             </Text>
-           </View>
+      <View style={styles.statsContainer}>
+        <Text style={styles.statsText}>
+          {enableProximityLoading && proximityProperties.length > 0 
+            ? `Showing: ${clusters.length} markers | OSM Proximity: ${proximityProperties.length} properties (75m)`
+            : `Showing: ${clusters.length} markers | Viewport: ${viewportProperties.length} properties`
+          }
+        </Text>
+      </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

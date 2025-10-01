@@ -80,76 +80,54 @@ export async function redeemReports(propertyIds: string[], email?: string) {
       throw new Error(`Insufficient credits. You have ${currentCredits}, need ${propertyIds.length}`);
     }
     
-    const reportRes = await fetch(`https://${SUPABASE_REF}.functions.supabase.co/generatePropertyReport`, {
+    // Call the redeemReports Edge Function which handles:
+    // - Credit deduction
+    // - Report generation
+    // - Revenue sharing (10% to top contributor, 10% split among others)
+    // - Email sending
+    const reportRes = await fetch(`https://${SUPABASE_REF}.functions.supabase.co/redeemReports`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json", 
         "Authorization": `Bearer ${token}` 
       },
       body: JSON.stringify({ 
-        propertyId: propertyIds[0]
+        propertyIds: propertyIds,
+        email: userEmail
       }),
     });
+
+    if (!reportRes.ok) {
+      const errorText = await reportRes.text();
+      console.error('Report redemption error:', errorText);
+      throw new Error(`Failed to redeem report: ${reportRes.status}`);
+    }
 
     let reportResult;
     try {
       const reportText = await reportRes.text();
       reportResult = JSON.parse(reportText);
     } catch (parseError) {
-      throw new Error("Invalid response from report generation service");
+      throw new Error("Invalid response from report redemption service");
     }
     
-    if (!reportResult.success) {
-      throw new Error(reportResult.error || "Failed to generate report");
-    }
-
-    // Deduct credits after successful report generation
-    const { data: deductSuccess, error: deductError } = await supabase.rpc('debit_credits', {
-      p_user: session.session.user.id,
-      p_amount: propertyIds.length
-    });
-
-    if (deductError) {
-      throw new Error(`Failed to deduct credits: ${deductError.message}`);
-    }
-
-    if (!deductSuccess) {
-      throw new Error("Insufficient credits or credit deduction failed");
-    }
-
-    // Send email with report link
-
-    const emailRes = await fetch(`https://${SUPABASE_REF}.functions.supabase.co/emailPropertyReport`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json", 
-        "Authorization": `Bearer ${token}` 
-      },
-      body: JSON.stringify({ 
-        propertyId: propertyIds[0],
-        userEmail: userEmail
-      }),
-    });
-
-    let emailResult;
-    try {
-      const emailText = await emailRes.text();
-      emailResult = JSON.parse(emailText);
-    } catch (emailError) {
-      emailResult = { success: false, error: "Email parsing failed" };
+    if (!reportResult.ok) {
+      throw new Error(reportResult.error || reportResult.message || "Failed to redeem report");
     }
 
     const result = {
       ok: true,
-      message: `Report generated successfully`,
+      message: reportResult.message || `Report generated successfully`,
       propertyId: propertyIds[0],
-      reportUrl: reportResult.reportUrl,
-      emailSent: emailResult.success,
-      files: 1
+      files: reportResult.files || propertyIds.length,
+      revenue_shared: reportResult.revenue_shared || false
     };
+    
+    console.log('✅ Report redeemed with revenue sharing:', result);
     
     return result;
   } catch (error) {
+    console.error('❌ Report redemption failed:', error);
     throw error;
   }
 }

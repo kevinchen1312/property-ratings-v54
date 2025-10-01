@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
@@ -16,6 +16,7 @@ import { redeemReports, getUserCredits } from '../services/reportsApi';
 import { supabase } from '../lib/supabase';
 import { CreditPurchaseModal } from '../components/CreditPurchaseModal';
 import { syncPendingCredits } from '../services/creditSync';
+import { searchProperties } from '../services/properties';
 // Properties loaded dynamically by ClusteredMapView
 
 const { width, height } = Dimensions.get('window');
@@ -45,9 +46,121 @@ export const MapScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<string>('');
   const [creatingTestRatings, setCreatingTestRatings] = useState(false);
   const [creditPurchaseModalVisible, setCreditPurchaseModalVisible] = useState(false);
+  const [proximityMode, setProximityMode] = useState(true); // Toggle between proximity and exploration mode
 
-  // Map ref
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Property[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+
+  // Menu expansion state
+  const [menuExpanded, setMenuExpanded] = useState(false);
+  
+  // Track which properties the user has rated
+  const [ratedPropertyIds, setRatedPropertyIds] = useState<Set<string>>(new Set());
+  
+  // Load recently rated properties (within past hour) on mount
+  useEffect(() => {
+    const loadRecentlyRatedProperties = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+        const { data, error } = await supabase
+          .from('rating')
+          .select('property_id')
+          .eq('user_id', user.id)
+          .gte('created_at', oneHourAgo);
+
+        if (error) {
+          // Silently handle - non-fatal
+          return;
+        }
+
+        if (data && data.length > 0) {
+          const recentPropertyIds = new Set(data.map(r => r.property_id));
+          setRatedPropertyIds(recentPropertyIds);
+          console.log(`📍 Loaded ${recentPropertyIds.size} recently rated properties`);
+        } else {
+          // Clear gray pins if no properties rated within the hour
+          setRatedPropertyIds(new Set());
+        }
+      } catch (error) {
+        // Silently handle - non-fatal
+      }
+    };
+
+    loadRecentlyRatedProperties();
+    
+    // Refresh every 5 minutes to update which properties are still within the hour window
+    const refreshInterval = setInterval(loadRecentlyRatedProperties, 5 * 60 * 1000);
+    
+    return () => clearInterval(refreshInterval);
+  }, []);
+
+  // Map ref (need to access from ClusteredMapView)
   const mapRef = useRef<MapView>(null);
+
+  // Function to center map on user location with proper zoom
+  const centerOnUserLocation = useCallback(() => {
+    if (location && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        latitudeDelta: 0.0015, // More zoomed in to see individual pins clearly
+        longitudeDelta: 0.0015,
+      }, 1000); // 1 second animation
+    }
+  }, [location]);
+
+  // Search for properties
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    
+    if (query.length < 2) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = await searchProperties(query);
+      setSearchResults(results);
+      setShowSearchResults(true);
+    } catch (error) {
+      Alert.alert('Search Error', 'Failed to search properties');
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Handle selecting a search result
+  const handleSelectSearchResult = useCallback((property: Property) => {
+    // Close search results
+    setShowSearchResults(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    Keyboard.dismiss();
+
+    // Zoom to the property
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: property.lat,
+        longitude: property.lng,
+        latitudeDelta: 0.0015,
+        longitudeDelta: 0.0015,
+      }, 1000);
+    }
+
+    // Open the property details modal after a short delay
+    setTimeout(() => {
+      handleMarkerPress(property);
+    }, 1100);
+  }, [handleMarkerPress]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -114,7 +227,6 @@ export const MapScreen: React.FC = () => {
 
         setLoading(false);
       } catch (error) {
-        console.error('Error setting up location:', error);
         setLoading(false);
         Alert.alert(
           'Location Error',
@@ -187,6 +299,9 @@ export const MapScreen: React.FC = () => {
     try {
       await submitRatings(submission);
       
+      // Add property to rated set (turns pin gray)
+      setRatedPropertyIds(prev => new Set(prev).add(selectedProperty.id));
+      
       // Update rate limit status after successful submission
       const rateLimitCheck = await checkHourlyRateLimit(selectedProperty.id);
       setHasRatedRecently(rateLimitCheck.isRateLimited);
@@ -195,7 +310,7 @@ export const MapScreen: React.FC = () => {
       handleModalClose();
     } catch (error: any) {
       // Error handling is done in the service with user-friendly alerts
-      console.error('Rating submission error:', error);
+      // Silently handle - already shown to user
     } finally {
       setSubmitting(false);
     }
@@ -345,7 +460,7 @@ export const MapScreen: React.FC = () => {
         );
       }
     } catch (error) {
-      console.error('Auto-sync failed:', error);
+      // Silently handle - non-fatal
     }
   };
 
@@ -372,7 +487,7 @@ export const MapScreen: React.FC = () => {
           }, 1000);
         }
       } catch (error) {
-        console.error('Auto-sync failed:', error);
+        // Silently handle - non-fatal
       }
     };
     loadCredits();
@@ -401,7 +516,7 @@ export const MapScreen: React.FC = () => {
             setUserCredits(currentCredits);
           }
         } catch (error) {
-          console.error('Auto-sync/refresh failed:', error);
+          // Silently handle - non-fatal
         }
       }
     };
@@ -426,7 +541,7 @@ export const MapScreen: React.FC = () => {
           );
         }
       } catch (error) {
-        console.error('Periodic sync failed:', error);
+        // Silently handle - non-fatal
       }
     };
 
@@ -498,51 +613,84 @@ export const MapScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Credit Controls */}
-      <View style={styles.creditControls}>
-        <Text style={styles.creditsText}>Credits: {userCredits}</Text>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search properties by address..."
+          value={searchQuery}
+          onChangeText={handleSearch}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+        />
+        {isSearching && (
+          <ActivityIndicator style={styles.searchLoader} size="small" color="#007AFF" />
+        )}
+      </View>
+
+      {/* Search Results Dropdown */}
+      {showSearchResults && searchResults.length > 0 && (
+        <View style={styles.searchResultsContainer}>
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.searchResultItem}
+                onPress={() => handleSelectSearchResult(item)}
+              >
+                <Text style={styles.searchResultName}>{item.name}</Text>
+                <Text style={styles.searchResultAddress}>{item.address}</Text>
+              </TouchableOpacity>
+            )}
+            style={styles.searchResultsList}
+            keyboardShouldPersistTaps="handled"
+          />
+        </View>
+      )}
+
+      {/* Credit Controls - Collapsible Menu */}
+      <View style={styles.creditControls} pointerEvents="box-none">
+        {/* Minimized View - Always Visible */}
         <TouchableOpacity 
-          style={[styles.creditButton, styles.buyCreditsButton]} 
-          onPress={() => setCreditPurchaseModalVisible(true)}
+          style={styles.menuToggle}
+          onPress={() => setMenuExpanded(!menuExpanded)}
+          activeOpacity={0.8}
         >
-          <Text style={styles.creditButtonText}>
-            💳 Buy Credits
-          </Text>
+          <Text style={styles.creditsText}>Credits: {userCredits}</Text>
+          <Text style={styles.toggleIcon}>{menuExpanded ? '▼' : '▲'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.testButton, styles.earningsButton]} 
-          onPress={() => navigation.navigate('Earnings')}
-        >
-          <Text style={styles.testButtonText}>
-            💰 Earnings
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.testButton, styles.analyticsButton]} 
-          onPress={() => navigation.navigate('Analytics')}
-        >
-          <Text style={styles.testButtonText}>
-            📊 Analytics
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.testButton, styles.testRatingsButton]} 
-          onPress={createTestRatings}
-          disabled={creatingTestRatings}
-        >
-          <Text style={styles.testButtonText}>
-            {creatingTestRatings ? 'Creating...' : '🧪 Add Test Ratings'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.testButton, styles.syncButton]} 
-          onPress={syncPendingCreditsAndUpdate}
-        >
-          <Text style={styles.testButtonText}>
-            🔄 Sync Credits
-          </Text>
-        </TouchableOpacity>
+
+        {/* Expanded Menu - Conditionally Visible */}
+        {menuExpanded && (
+          <View style={styles.expandedMenu}>
+            <TouchableOpacity 
+              style={[styles.creditButton, styles.buyCreditsButton]} 
+              onPress={() => setCreditPurchaseModalVisible(true)}
+            >
+              <Text style={styles.creditButtonText}>
+                💳 Buy Credits
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.testButton, styles.earningsButton]} 
+              onPress={() => navigation.navigate('Earnings')}
+            >
+              <Text style={styles.testButtonText}>
+                💰 Earnings
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.testButton, styles.analyticsButton]} 
+              onPress={() => navigation.navigate('Analytics')}
+            >
+              <Text style={styles.testButtonText}>
+                📊 Analytics
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
       
       <ClusteredMapView
@@ -551,8 +699,8 @@ export const MapScreen: React.FC = () => {
         initialRegion={location ? {
           latitude: location.latitude,
           longitude: location.longitude,
-          latitudeDelta: 0.01, // Closer zoom for proximity view
-          longitudeDelta: 0.01, // Closer zoom for proximity view
+          latitudeDelta: 0.0015, // Same zoom as center button - street level view
+          longitudeDelta: 0.0015, // Same zoom as center button
         } : {
           latitude: 37.320, // Centered between Cupertino and San Jose
           longitude: -122.040, // Centered between Cupertino and San Jose  
@@ -560,12 +708,24 @@ export const MapScreen: React.FC = () => {
           longitudeDelta: 0.08, // Wider view to show both cities
         }}
         userLocation={location}
-        enableProximityLoading={true}
+        selectedProperty={selectedProperty}
+        enableProximityLoading={proximityMode}
+        ratedPropertyIds={ratedPropertyIds}
         style={styles.map}
+        ref={mapRef}
       />
       
-      {/* 200m circle around user location - proximity loading indicator */}
-      {location && (
+      {/* Center on Me Button */}
+      <TouchableOpacity 
+        style={styles.centerButton}
+        onPress={centerOnUserLocation}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.centerButtonText}>📍</Text>
+      </TouchableOpacity>
+      
+      {/* CIRCLES NOW RENDERED INSIDE ClusteredMapView */}
+      {false && location && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <MapView
             style={StyleSheet.absoluteFillObject}
@@ -586,7 +746,7 @@ export const MapScreen: React.FC = () => {
                 latitude: location.latitude,
                 longitude: location.longitude,
               }}
-              radius={200} // 200 meters proximity radius
+              radius={75} // 75 meters OSM proximity radius
               strokeColor="rgba(34, 197, 94, 0.6)" // Green color for user proximity
               fillColor="rgba(34, 197, 94, 0.1)"
               strokeWidth={2}
@@ -595,8 +755,8 @@ export const MapScreen: React.FC = () => {
         </View>
       )}
       
-      {/* 200m circle around selected property - overlay on clustered map */}
-      {selectedProperty && (
+      {/* 200m circle around selected property - NOW INSIDE ClusteredMapView */}
+      {false && selectedProperty && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <MapView
             style={StyleSheet.absoluteFillObject}
@@ -896,19 +1056,32 @@ const styles = StyleSheet.create({
   // Credit controls styles
   creditControls: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     left: 10,
     right: 10,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    padding: 12,
     borderRadius: 8,
     zIndex: 1000,
+  },
+  menuToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+  },
+  toggleIcon: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   creditsText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
-    marginRight: 10,
+  },
+  expandedMenu: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
   testButton: {
     backgroundColor: '#FF9500',
@@ -955,5 +1128,89 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  proximityActiveButton: {
+    backgroundColor: '#34C759',
+  },
+  explorationActiveButton: {
+    backgroundColor: '#FF9500',
+  },
+  centerButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  centerButtonText: {
+    fontSize: 28,
+  },
+  searchContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 10,
+    right: 10,
+    zIndex: 1001,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  searchLoader: {
+    position: 'absolute',
+    right: 12,
+  },
+  searchResultsContainer: {
+    position: 'absolute',
+    top: 110,
+    left: 10,
+    right: 10,
+    maxHeight: 300,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1002,
+  },
+  searchResultsList: {
+    maxHeight: 300,
+  },
+  searchResultItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  searchResultName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  searchResultAddress: {
+    fontSize: 14,
+    color: '#666',
   },
 });
