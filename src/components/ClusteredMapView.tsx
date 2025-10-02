@@ -18,6 +18,7 @@ interface ClusteredMapViewProps {
   ratedPropertyIds?: Set<string>; // Track which properties user has rated
   autoOrientEnabled?: boolean; // Auto-rotate map to match device direction
   onCenterButtonPress?: () => void; // Called when center button is pressed to re-enable auto-rotation
+  lockRotation?: boolean; // Lock map rotation (e.g., when menu is open)
   ref?: React.RefObject<MapView>;
 }
 
@@ -108,7 +109,8 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   enableProximityLoading = false,
   ratedPropertyIds = new Set(),
   autoOrientEnabled = true,
-  onCenterButtonPress
+  onCenterButtonPress,
+  lockRotation = false
 }, ref) => {
   const mapRef = ref as React.RefObject<MapView> || useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
@@ -129,6 +131,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   const [currentHeading, setCurrentHeading] = useState<number>(0);
   const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const hasManuallyRotatedRef = useRef<boolean>(false);
+  const hasInitializedCameraRef = useRef<boolean>(false);
   
   // Load properties for current viewport or proximity
   useEffect(() => {
@@ -188,6 +191,22 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         setCurrentHeading(deviceHeading);
         console.log(`🧭 Initial heading: ${deviceHeading}°`);
 
+        // Automatically center on user location with device heading when first loaded
+        if (mapRef.current && autoOrientEnabled && userLocation && !hasInitializedCameraRef.current) {
+          hasInitializedCameraRef.current = true;
+          mapRef.current.animateCamera({
+            center: {
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+            },
+            heading: deviceHeading,
+            pitch: 45,
+            altitude: 350,
+            zoom: 18,
+          }, { duration: 500 });
+          console.log(`🎯 Auto-centered on user location with heading ${deviceHeading}° on initial load`);
+        }
+
         // Set up continuous heading tracking if auto-orient is enabled
         if (autoOrientEnabled) {
           headingSubscriptionRef.current = await Location.watchHeadingAsync(
@@ -198,8 +217,8 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
               
               setCurrentHeading(newHeading);
               
-              // Auto-rotate the map if enabled and user hasn't manually rotated
-              if (autoOrientEnabled && !hasManuallyRotatedRef.current && mapRef.current) {
+              // Auto-rotate the map if enabled, user hasn't manually rotated, and rotation is not locked
+              if (autoOrientEnabled && !hasManuallyRotatedRef.current && !lockRotation && mapRef.current) {
                 mapRef.current.getCamera().then(camera => {
                   mapRef.current?.animateCamera({
                     ...camera,
@@ -222,7 +241,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
 
     setupHeadingTracking();
 
-    // Cleanup on unmount or when autoOrientEnabled changes
+    // Cleanup on unmount or when autoOrientEnabled or lockRotation changes
     return () => {
       if (headingSubscriptionRef.current) {
         headingSubscriptionRef.current.remove();
@@ -230,7 +249,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         console.log('🧭 Stopped watching device heading');
       }
     };
-  }, [autoOrientEnabled]); // Re-run when auto-orient setting changes
+  }, [autoOrientEnabled, lockRotation]); // Re-run when auto-orient setting or lock rotation changes
 
   // Initialize supercluster with properties (viewport or proximity)
   const supercluster = useMemo(() => {
@@ -326,8 +345,8 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         },
         pitch: 45,
         heading: currentHeading, // Use current device heading for auto-orientation
-        altitude: 200,
-        zoom: 19,
+        altitude: 350,
+        zoom: 18,
       }, { duration: 500 });
       
       // Notify parent component if callback is provided
@@ -339,24 +358,25 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
 
   // Trigger region sync on map ready to load all pins immediately
   const handleMapReady = () => {
-    if (mapRef.current) {
+    if (mapRef.current && !hasInitializedCameraRef.current) {
       // Small delay to ensure map is fully ready
       setTimeout(() => {
-        if (mapRef.current) {
-          mapRef.current.getCamera().then(camera => {
-            // Update region to match the actual visible area
-            const newRegion = {
-              latitude: camera.center.latitude,
-              longitude: camera.center.longitude,
-              latitudeDelta: 0.003,
-              longitudeDelta: 0.003,
-            };
-            setRegion(newRegion);
-          }).catch(() => {
-            // Silently handle
-          });
+        if (mapRef.current && userLocation && !hasInitializedCameraRef.current) {
+          // Automatically center on user location with device heading (like pressing center button)
+          hasInitializedCameraRef.current = true;
+          mapRef.current.animateCamera({
+            center: {
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+            },
+            pitch: 45,
+            heading: currentHeading, // Use device heading from start
+            altitude: 350,
+            zoom: 18,
+          }, { duration: 500 }); // Smooth animation to user location
+          console.log('🎯 Auto-centered on user location with device heading on initial load');
         }
-      }, 100);
+      }, 300); // Slightly longer delay to ensure heading is fetched
     }
   };
 
@@ -365,6 +385,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
       <MapView
         ref={mapRef}
         style={styles.map}
+        mapType="mutedStandard"
         initialRegion={region}
         initialCamera={{
           center: {
@@ -372,9 +393,9 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
             longitude: region.longitude,
           },
           pitch: 45, // 3D tilt angle
-          heading: 0, // North-up orientation (same as center button default)
-          altitude: 200, // Lower altitude = more zoomed in
-          zoom: 19, // Higher zoom = closer view
+          heading: currentHeading, // Use device heading from start
+          altitude: 350, // Zoomed in 2 levels closer
+          zoom: 18, // 2 zoom levels closer
         }}
         onMapReady={handleMapReady}
         onRegionChangeComplete={handleRegionChangeComplete}
@@ -385,12 +406,15 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         showsCompass
         showsScale
         loadingEnabled
-        rotateEnabled={true}  // Enable rotation
+        rotateEnabled={!lockRotation}  // Disable rotation when locked (menu open)
         pitchEnabled={false}  // Disable 3D tilt/pitch gestures
         scrollEnabled={true}
         zoomEnabled={true}
         zoomTapEnabled={true}
         zoomControlEnabled={true}
+        showsBuildings={false}
+        showsIndoors={false}
+        showsPointsOfInterest={false}
       >
         {/* 75m circle around user location */}
         {userLocation && (
@@ -400,8 +424,8 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
               longitude: userLocation.longitude,
             }}
             radius={75}
-            strokeColor="rgba(34, 197, 94, 0.6)"
-            fillColor="rgba(34, 197, 94, 0.1)"
+            strokeColor="rgba(167, 139, 250, 0.6)"
+            fillColor="rgba(167, 139, 250, 0.1)"
             strokeWidth={2}
           />
         )}
@@ -421,20 +445,6 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
               <View style={styles.userLocationDot} />
             </View>
           </Marker>
-        )}
-        
-        {/* 200m circle around selected property */}
-        {selectedProperty && (
-          <Circle
-            center={{
-              latitude: selectedProperty.lat,
-              longitude: selectedProperty.lng,
-            }}
-            radius={200}
-            strokeColor="rgba(255, 59, 48, 0.6)"
-            fillColor="rgba(255, 59, 48, 0.1)"
-            strokeWidth={2}
-          />
         )}
         
         {clusters.map((point, index) => {

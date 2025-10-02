@@ -255,7 +255,7 @@ export const AnalyticsScreen: React.FC = () => {
                   styles.attributeBarFill, 
                   { 
                     width: `${(analytics.ratingsByAttribute.safety / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#4ECDC4'
+                    backgroundColor: '#7C3AED'
                   }
                 ]} 
               />
@@ -271,7 +271,7 @@ export const AnalyticsScreen: React.FC = () => {
                   styles.attributeBarFill, 
                   { 
                     width: `${(analytics.ratingsByAttribute.quietness / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#FF6B6B'
+                    backgroundColor: '#7C3AED'
                   }
                 ]} 
               />
@@ -287,7 +287,7 @@ export const AnalyticsScreen: React.FC = () => {
                   styles.attributeBarFill, 
                   { 
                     width: `${(analytics.ratingsByAttribute.cleanliness / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#45B7D1'
+                    backgroundColor: '#7C3AED'
                   }
                 ]} 
               />
@@ -311,7 +311,7 @@ export const AnalyticsScreen: React.FC = () => {
                    activity.attribute === 'safety' ? '🛡️' : '🧹'} {activity.attribute}
                 </Text>
                 <Text style={styles.activityStars}>
-                  {'⭐'.repeat(activity.stars)}
+                  {'♪'.repeat(activity.stars)}
                 </Text>
               </View>
               <Text style={styles.activityProperty}>{activity.property_name}</Text>
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
-    color: '#007AFF',
+    color: '#7C3AED',
   },
   summaryLabel: {
     fontSize: 12,
@@ -486,8 +486,9 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   activityStars: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: GlobalFonts.regular,
+    color: '#7C3AED',
   },
   activityProperty: {
     fontSize: 16,

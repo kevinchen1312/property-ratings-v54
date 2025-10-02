@@ -100,8 +100,9 @@ export const RootNavigator: React.FC = () => {
             component={EarningsScreen}
             options={{
               title: 'My Earnings',
+              headerBackTitle: 'Menu',
               headerStyle: {
-                backgroundColor: '#007AFF',
+                backgroundColor: '#7C3AED',
               },
               headerTintColor: '#fff',
               headerTitleStyle: {
@@ -115,8 +116,9 @@ export const RootNavigator: React.FC = () => {
             component={AnalyticsScreen}
             options={{
               title: 'Rating Analytics',
+              headerBackTitle: 'Menu',
               headerStyle: {
-                backgroundColor: '#007AFF',
+                backgroundColor: '#7C3AED',
               },
               headerTintColor: '#fff',
               headerTitleStyle: {
@@ -130,8 +132,9 @@ export const RootNavigator: React.FC = () => {
             component={BuyCreditsScreen}
             options={{
               title: 'Buy Credits',
+              headerBackTitle: 'Menu',
               headerStyle: {
-                backgroundColor: '#007AFF',
+                backgroundColor: '#7C3AED',
               },
               headerTintColor: '#fff',
               headerTitleStyle: {

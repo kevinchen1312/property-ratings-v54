@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { GlobalFonts } from '../styles/global';
+import { playNoteInterval } from '../services/noteSound';
 
 interface StarRatingProps {
   label: string;
@@ -15,7 +16,7 @@ export const StarRating: React.FC<StarRatingProps> = ({
   onRatingChange,
   disabled = false,
 }) => {
-  const handleStarPress = (starValue: number) => {
+  const handleStarPress = async (starValue: number) => {
     if (disabled) return;
     
     // Toggle logic:
@@ -28,37 +29,39 @@ export const StarRating: React.FC<StarRatingProps> = ({
     } else {
       // Clicking a different star or no rating selected - set new rating
       onRatingChange(starValue);
+      // Play the corresponding musical interval
+      await playNoteInterval(starValue);
     }
   };
 
-  const renderStars = () => {
-    const stars = [];
+  const renderNotes = () => {
+    const notes = [];
     for (let i = 1; i <= 5; i++) {
-      stars.push(
+      notes.push(
         <TouchableOpacity
           key={i}
           style={[
-            styles.star, 
-            disabled && styles.disabledStar,
-            i === rating && rating > 0 && styles.currentRatingStar
+            styles.note, 
+            disabled && styles.disabledNote,
+            i === rating && rating > 0 && styles.currentRatingNote
           ]}
           onPress={() => handleStarPress(i)}
           disabled={disabled}
         >
-          <Text style={[styles.starText, i <= rating && styles.selectedStar]}>
-            ⭐
+          <Text style={[styles.noteText, i <= rating && styles.selectedNote]}>
+            ♪
           </Text>
         </TouchableOpacity>
       );
     }
-    return stars;
+    return notes;
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.starsContainer}>
-        {renderStars()}
+      <View style={styles.notesContainer}>
+        {renderNotes()}
         <Text style={styles.ratingText}>
           {rating === 0 ? '(Not rated)' : `(${rating}/5)`}
         </Text>
@@ -79,23 +82,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: 'capitalize',
   },
-  starsContainer: {
+  notesContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  star: {
+  note: {
     marginRight: 8,
     padding: 4,
   },
-  disabledStar: {
+  disabledNote: {
     opacity: 0.5,
   },
-  starText: {
-    fontSize: 24,
-    opacity: 0.3,
+  noteText: {
+    fontSize: 28,
+    color: '#D1D5DB',
   },
-  selectedStar: {
-    opacity: 1,
+  selectedNote: {
+    color: '#7C3AED',
   },
   ratingText: {
     marginLeft: 8,
@@ -104,10 +107,10 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '500',
   },
-  currentRatingStar: {
-    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  currentRatingNote: {
+    backgroundColor: 'rgba(124, 58, 237, 0.1)',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0, 122, 255, 0.3)',
+    borderColor: 'rgba(124, 58, 237, 0.3)',
   },
 });

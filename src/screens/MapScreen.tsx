@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard, Switch } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard, Switch, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -20,6 +20,7 @@ import { searchProperties } from '../services/properties';
 import { sanitizeUsername } from '../lib/profanityFilter';
 import { GlobalFonts } from '../styles/global';
 import { FloatingMenu } from '../components/FloatingMenu';
+import { preloadSounds } from '../services/noteSound';
 // Properties loaded dynamically by ClusteredMapView
 
 const { width, height } = Dimensions.get('window');
@@ -54,12 +55,14 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
   const [creatingTestRatings, setCreatingTestRatings] = useState(false);
   const [creditPurchaseModalVisible, setCreditPurchaseModalVisible] = useState(false);
   const [proximityMode, setProximityMode] = useState(true); // Toggle between proximity and exploration mode
+  const [menuVisible, setMenuVisible] = useState(false); // Track FloatingMenu visibility to lock map rotation
 
   // Search functionality
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Property[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const keyboardHeight = useRef(new Animated.Value(30)).current;
 
   // Settings modal state
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -77,6 +80,18 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
   }>>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   
+  // Track if Map screen is focused
+  const [isMapFocused, setIsMapFocused] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsMapFocused(true);
+      return () => {
+        setIsMapFocused(false);
+      };
+    }, [])
+  );
+
   // Load recently rated properties (within past hour) on mount
   useEffect(() => {
     const loadRecentlyRatedProperties = async () => {
@@ -139,6 +154,45 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
   // Debounce timer and latest query tracking
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestSearchQueryRef = useRef<string>('');
+
+  // Keyboard listeners for search bar positioning with animation
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener('keyboardWillShow', (e) => {
+      Animated.timing(keyboardHeight, {
+        toValue: e.endCoordinates.height,
+        duration: Math.max((e.duration || 250) * 0.7, 150), // 70% of keyboard duration, min 150ms
+        useNativeDriver: false,
+      }).start();
+    });
+    const keyboardWillHide = Keyboard.addListener('keyboardWillHide', (e) => {
+      Animated.timing(keyboardHeight, {
+        toValue: 30,
+        duration: Math.max((e.duration || 250) * 0.7, 150), // 70% of keyboard duration, min 150ms
+        useNativeDriver: false,
+      }).start();
+    });
+    const keyboardDidShow = Keyboard.addListener('keyboardDidShow', (e) => {
+      Animated.timing(keyboardHeight, {
+        toValue: e.endCoordinates.height,
+        duration: 0,
+        useNativeDriver: false,
+      }).start();
+    });
+    const keyboardDidHide = Keyboard.addListener('keyboardDidHide', () => {
+      Animated.timing(keyboardHeight, {
+        toValue: 30,
+        duration: 0,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+      keyboardDidShow.remove();
+      keyboardDidHide.remove();
+    };
+  }, [keyboardHeight]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -593,92 +647,43 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
     }
   };
 
-  // Load user credits on mount and sync pending purchases
+  // Load user credits on mount
   useEffect(() => {
     const loadCredits = async () => {
       const credits = await getUserCredits();
       setUserCredits(credits);
       
-      // Auto-sync pending credits on app load (safe version)
-      try {
-        const syncResult = await syncPendingCredits();
-        if (syncResult.creditsAdded > 0) {
-          const updatedCredits = await getUserCredits();
-          setUserCredits(updatedCredits);
-          console.log(`🎉 Auto-synced ${syncResult.creditsAdded} credits on app load`);
-          // Show subtle notification instead of alert
-          setTimeout(() => {
-            Alert.alert(
-              'Credits Added! 🎉',
-              `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
-              [{ text: 'OK' }]
-            );
-          }, 1000);
-        }
-      } catch (error) {
-        // Silently handle - non-fatal
-      }
+      // NOTE: Auto-sync disabled to prevent premature credit completion
+      // Credits will be added via Stripe webhooks after successful payment
     };
     loadCredits();
+    
+    // Preload note sounds in the background
+    preloadSounds();
   }, []);
 
-  // Auto-refresh when app comes back into focus (safe - only refreshes UI)
+  // Auto-refresh when app comes back into focus
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: string) => {
       if (nextAppState === 'active') {
         console.log('📱 App became active - refreshing credit balance');
+        // Just refresh credits without completing any purchases
+        // The webhook is responsible for completing purchases
         try {
-          // First, try to sync any pending credits (this is the key fix!)
-          const syncResult = await syncPendingCredits();
-          if (syncResult.creditsAdded > 0) {
-            console.log(`🎉 Auto-synced ${syncResult.creditsAdded} credits on app focus`);
-            const updatedCredits = await getUserCredits();
-            setUserCredits(updatedCredits);
-            Alert.alert(
-              'Credits Added! 🎉',
-              `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
-              [{ text: 'OK' }]
-            );
-          } else {
-            // No pending credits, just refresh the UI from database
-            const currentCredits = await getUserCredits();
-            setUserCredits(currentCredits);
-          }
+          const currentCredits = await getUserCredits();
+          setUserCredits(currentCredits);
         } catch (error) {
-          // Silently handle - non-fatal
+          console.error('Failed to refresh credits:', error);
         }
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [userCredits]);
-
-  // Periodic credit sync check (every 30 seconds when app is active)
-  useEffect(() => {
-    const periodicSync = async () => {
-      try {
-        const syncResult = await syncPendingCredits();
-        if (syncResult.creditsAdded > 0) {
-          console.log(`🔄 Periodic sync added ${syncResult.creditsAdded} credits`);
-          const updatedCredits = await getUserCredits();
-          setUserCredits(updatedCredits);
-          Alert.alert(
-            'Credits Added! 🎉',
-            `${syncResult.creditsAdded} credit${syncResult.creditsAdded === 1 ? '' : 's'} from recent purchases ${syncResult.creditsAdded === 1 ? 'has' : 'have'} been added to your account!`,
-            [{ text: 'OK' }]
-          );
-        }
-      } catch (error) {
-        // Silently handle - non-fatal
-      }
-    };
-
-    // Run periodic sync every 30 seconds
-    const interval = setInterval(periodicSync, 30000);
-    
-    return () => clearInterval(interval);
   }, []);
+
+  // NOTE: Periodic credit sync disabled to prevent premature credit completion
+  // Credits will be added via Stripe webhooks after successful payment
 
   // Countdown timer for rate limiting
   useEffect(() => {
@@ -743,24 +748,30 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
   return (
     <View style={styles.container}>
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search any address to get a report..."
-                value={searchQuery}
-                onChangeText={handleSearch}
-                autoCapitalize="none"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
+      <Animated.View style={[styles.searchContainer, { 
+        bottom: Animated.add(keyboardHeight, 10)
+      }]}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search any address to hear a song..."
+          value={searchQuery}
+          onChangeText={handleSearch}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+        />
         {isSearching && (
-          <ActivityIndicator style={styles.searchLoader} size="small" color="#007AFF" />
+          <ActivityIndicator style={styles.searchLoader} size="small" color="#7C3AED" />
         )}
-      </View>
+      </Animated.View>
 
       {/* Search Results Dropdown */}
       {showSearchResults && searchResults.length > 0 && (
-        <View style={styles.searchResultsContainer}>
+        <Animated.View 
+          style={[styles.searchResultsContainer, { 
+            bottom: Animated.add(keyboardHeight, 54)
+          }]}
+        >
           <FlatList
             data={searchResults}
             keyExtractor={(item) => item.id}
@@ -840,7 +851,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
             style={styles.searchResultsList}
             keyboardShouldPersistTaps="handled"
           />
-        </View>
+        </Animated.View>
       )}
 
       {/* Floating Menu Button */}
@@ -850,6 +861,8 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
         onEarnings={() => navigation.navigate('Earnings')}
         onAnalytics={() => navigation.navigate('Analytics')}
         onSettings={() => setSettingsVisible(true)}
+        onMenuVisibilityChange={setMenuVisible}
+        isScreenFocused={isMapFocused}
       />
       
       <ClusteredMapView
@@ -872,6 +885,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
         enableProximityLoading={proximityMode}
         ratedPropertyIds={ratedPropertyIds}
         autoOrientEnabled={autoOrientEnabled}
+        lockRotation={menuVisible || modalVisible || settingsVisible}
         style={styles.map}
         ref={mapRef}
       />
@@ -948,7 +962,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              {showLeaderboard ? 'Leaderboard' : 'Rate Property'}
+              {showLeaderboard ? 'Billboard' : 'Sing a Song'}
             </Text>
             <TouchableOpacity onPress={handleModalClose} style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
@@ -1037,10 +1051,10 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                   {submitting ? (
                     <View style={styles.submittingContainer}>
                       <ActivityIndicator size="small" color="#fff" style={styles.submitLoader} />
-                      <Text style={styles.submitButtonText}>Submitting...</Text>
+                      <Text style={styles.submitButtonText}>Producing...</Text>
                     </View>
                   ) : (
-                    <Text style={styles.submitButtonText}>Submit Ratings</Text>
+                    <Text style={styles.submitButtonText}>Produce your song</Text>
                   )}
                 </TouchableOpacity>
 
@@ -1050,7 +1064,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                   disabled={testingReports}
                 >
                   <Text style={styles.previewButtonText}>
-                    {testingReports ? 'Generating Report...' : 'Purchase Report (1 credit)'}
+                    {testingReports ? 'Pressing vinyl...' : 'Buy a record (1 credit)'}
                   </Text>
                 </TouchableOpacity>
 
@@ -1060,7 +1074,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                   onPress={toggleLeaderboard}
                 >
                   <Text style={styles.leaderboardToggleButtonText}>
-                    🏆 View Leaderboard
+                    Billboard
                   </Text>
                 </TouchableOpacity>
               </>
@@ -1075,13 +1089,13 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                   onPress={toggleLeaderboard}
                 >
                   <Text style={styles.backToRatingButtonText}>
-                    ← Back to Rating
+                    ← Back to Song
                   </Text>
                 </TouchableOpacity>
 
                 {loadingLeaderboard ? (
                   <View style={styles.leaderboardLoading}>
-                    <ActivityIndicator size="large" color="#007AFF" />
+                    <ActivityIndicator size="large" color="#7C3AED" />
                     <Text style={styles.loadingText}>Loading leaderboard...</Text>
                   </View>
                 ) : leaderboardData.length === 0 ? (
@@ -1175,7 +1189,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                       Alert.alert('Error', 'Failed to save setting');
                     }
                   }}
-                  trackColor={{ false: '#d1d1d6', true: '#34C759' }}
+                  trackColor={{ false: '#d1d1d6', true: '#7C3AED' }}
                   thumbColor="#fff"
                   ios_backgroundColor="#d1d1d6"
                 />
@@ -1288,7 +1302,7 @@ const styles = StyleSheet.create({
   closeButtonText: {
     fontSize: 18,
     fontFamily: GlobalFonts.regular,
-    color: '#007AFF',
+    color: '#7C3AED',
   },
   modalContent: {
     flex: 1,
@@ -1315,7 +1329,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -1335,11 +1349,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
-    color: '#007AFF',
+    color: '#7C3AED',
     marginBottom: 20,
   },
   distanceWarning: {
-    color: '#FF3B30',
+    color: '#7C3AED',
   },
   rateLimitContainer: {
     marginBottom: 20,
@@ -1349,7 +1363,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
-    color: '#34C759',
+    color: '#7C3AED',
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -1357,9 +1371,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     fontFamily: GlobalFonts.regular,
-    color: '#FF9500',
+    color: '#7C3AED',
     textAlign: 'center',
-    backgroundColor: '#FFF3E0',
+    backgroundColor: '#F5F0FF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -1377,11 +1391,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   submitButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 12,
   },
   disabledButton: {
     backgroundColor: '#ccc',
@@ -1401,7 +1415,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   previewButton: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#7C3AED',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -1415,7 +1429,7 @@ const styles = StyleSheet.create({
   },
   // Leaderboard toggle button (below purchase button)
   leaderboardToggleButton: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#7C3AED',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -1432,7 +1446,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backToRatingButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -1508,16 +1522,16 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   leaderboardTop1: {
-    backgroundColor: '#FFF9E6',
-    borderColor: '#FFD700',
+    backgroundColor: '#F5F0FF',
+    borderColor: '#7C3AED',
   },
   leaderboardTop2: {
     backgroundColor: '#F5F5F5',
     borderColor: '#C0C0C0',
   },
   leaderboardTop3: {
-    backgroundColor: '#FFF5E6',
-    borderColor: '#CD7F32',
+    backgroundColor: '#F5F0FF',
+    borderColor: '#7C3AED',
   },
   leaderboardRank: {
     width: 50,
@@ -1556,7 +1570,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
   },
   settingsTitle: {
     fontSize: 24,
@@ -1631,7 +1645,6 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     position: 'absolute',
-    bottom: 30,
     left: 10,
     right: 10,
     zIndex: 1001,
@@ -1658,7 +1671,6 @@ const styles = StyleSheet.create({
   },
   searchResultsContainer: {
     position: 'absolute',
-    bottom: 84,
     left: 10,
     right: 10,
     maxHeight: 400,
@@ -1703,18 +1715,18 @@ const styles = StyleSheet.create({
   },
   searchResultRatings: {
     fontSize: 12,
-    color: '#007AFF',
+    color: '#7C3AED',
     fontWeight: '500',
     fontFamily: GlobalFonts.regular,
   },
   searchResultNew: {
     fontSize: 12,
-    color: '#22C55E',
+    color: '#7C3AED',
     fontWeight: '500',
     fontFamily: GlobalFonts.regular,
   },
   searchResultButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,

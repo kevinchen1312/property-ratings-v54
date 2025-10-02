@@ -10,6 +10,8 @@ interface FloatingMenuProps {
   onEarnings: () => void;
   onAnalytics: () => void;
   onSettings: () => void;
+  onMenuVisibilityChange?: (visible: boolean) => void;
+  isScreenFocused?: boolean;
 }
 
 export const FloatingMenu: React.FC<FloatingMenuProps> = ({
@@ -18,36 +20,33 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
   onEarnings,
   onAnalytics,
   onSettings,
+  onMenuVisibilityChange,
+  isScreenFocused = true,
 }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [scaleAnim] = useState(new Animated.Value(0));
 
   const openMenu = () => {
+    // Set scale to 1 immediately for instant appearance
+    scaleAnim.setValue(1);
     setMenuVisible(true);
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 40,
-    }).start();
+    onMenuVisibilityChange?.(true);
   };
 
   const closeMenu = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 40,
-    }).start(() => setMenuVisible(false));
+    setMenuVisible(false);
+    onMenuVisibilityChange?.(false);
+    // Reset animation to 0 after closing
+    setTimeout(() => {
+      scaleAnim.setValue(0);
+    }, 100);
   };
 
   const handleMenuAction = (action: () => void) => {
     console.log('FloatingMenu: Menu action triggered');
+    // Close menu and navigate
     closeMenu();
-    setTimeout(() => {
-      console.log('FloatingMenu: Executing action after delay');
-      action();
-    }, 300);
+    action();
   };
 
   // Calculate badge width based on number of digits
@@ -75,7 +74,7 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
 
       {/* Menu Overlay */}
       <Modal
-        visible={menuVisible}
+        visible={menuVisible && isScreenFocused}
         transparent
         animationType="none"
         onRequestClose={closeMenu}
@@ -85,6 +84,7 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
           activeOpacity={1}
           onPress={closeMenu}
         >
+          {/* White Modal Container */}
           <Animated.View
             style={[
               styles.menuContainer,
@@ -94,55 +94,40 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
               },
             ]}
           >
-            <View style={styles.menuGrid}>
-              {/* Buy Credits */}
-              <TouchableOpacity
-                style={[styles.menuItem, styles.buyCreditsButton]}
-                onPress={() => handleMenuAction(onBuyCredits)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.menuItemIcon}>💳</Text>
-                <Text style={styles.menuItemText}>Buy{'\n'}Credits</Text>
-              </TouchableOpacity>
-
-              {/* Earnings */}
-              <TouchableOpacity
-                style={[styles.menuItem, styles.earningsButton]}
-                onPress={() => handleMenuAction(onEarnings)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.menuItemIcon}>💰</Text>
-                <Text style={styles.menuItemText}>Earnings</Text>
-              </TouchableOpacity>
-
-              {/* Analytics */}
-              <TouchableOpacity
-                style={[styles.menuItem, styles.analyticsButton]}
-                onPress={() => handleMenuAction(onAnalytics)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.menuItemIcon}>📊</Text>
-                <Text style={styles.menuItemText}>Analytics</Text>
-              </TouchableOpacity>
-
-              {/* Settings */}
-              <TouchableOpacity
-                style={[styles.menuItem, styles.settingsButton]}
-                onPress={() => handleMenuAction(onSettings)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.menuItemIcon}>⚙️</Text>
-                <Text style={styles.menuItemText}>Settings</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Close button */}
+            {/* Buy Credits - Top Left */}
             <TouchableOpacity
-              style={styles.closeButton}
-              onPress={closeMenu}
+              style={[styles.buttonInBox, styles.buyCreditsButton, { top: 16, left: 16 }]}
+              onPress={() => handleMenuAction(onBuyCredits)}
               activeOpacity={0.8}
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.menuItemText}>Buy{'\n'}Credits</Text>
+            </TouchableOpacity>
+
+            {/* Earnings - Top Right */}
+            <TouchableOpacity
+              style={[styles.buttonInBox, styles.earningsButton, { top: 16, right: 16 }]}
+              onPress={() => handleMenuAction(onEarnings)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.menuItemText}>Earnings</Text>
+            </TouchableOpacity>
+
+            {/* Analytics - Bottom Left */}
+            <TouchableOpacity
+              style={[styles.buttonInBox, styles.analyticsButton, { bottom: 16, left: 16 }]}
+              onPress={() => handleMenuAction(onAnalytics)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.menuItemText}>Analytics</Text>
+            </TouchableOpacity>
+
+            {/* Settings - Bottom Right */}
+            <TouchableOpacity
+              style={[styles.buttonInBox, styles.settingsButton, { bottom: 16, right: 16 }]}
+              onPress={() => handleMenuAction(onSettings)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.menuItemText}>Settings</Text>
             </TouchableOpacity>
           </Animated.View>
         </TouchableOpacity>
@@ -196,15 +181,15 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
     alignItems: 'center',
   },
   menuContainer: {
-    width: width * 0.85,
-    maxWidth: 360,
+    position: 'absolute',
+    bottom: 180,
+    width: 340,
+    height: 240,
     backgroundColor: '#fff',
     borderRadius: 24,
-    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -215,11 +200,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 16,
+    position: 'relative',
   },
   menuItem: {
     width: '47%',
-    aspectRatio: 1,
+    aspectRatio: 1.3,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  menuItemBottom: {
+    marginBottom: 0,
+  },
+  greenDivider: {
+    height: 2,
+    backgroundColor: '#00ff00',
+    marginTop: 8,
+    marginLeft: -12,
+    marginRight: -12,
+  },
+  buttonInBox: {
+    position: 'absolute',
+    width: 150,
+    height: 100,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -230,42 +239,25 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   buyCreditsButton: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#7C3AED',
   },
   earningsButton: {
-    backgroundColor: '#FFD700',
+    backgroundColor: '#000000',
   },
   analyticsButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000000',
   },
   settingsButton: {
-    backgroundColor: '#8E8E93',
-  },
-  menuItemIcon: {
-    fontSize: 40,
-    marginBottom: 8,
+    backgroundColor: '#7C3AED',
   },
   menuItemText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
     textAlign: 'center',
-  },
-  closeButton: {
-    marginTop: 20,
-    alignSelf: 'center',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeButtonText: {
-    fontSize: 24,
-    color: '#666',
-    fontFamily: GlobalFonts.regular,
+    lineHeight: 24,
+    includeFontPadding: false,
   },
 });
 

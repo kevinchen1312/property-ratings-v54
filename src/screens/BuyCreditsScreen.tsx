@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import { CREDIT_PACKAGES, createCreditCheckout, CreditPackage } from '../services/creditPurchase';
@@ -24,6 +24,13 @@ export const BuyCreditsScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [currentCredits, setCurrentCredits] = useState(0);
+
+  // Refresh credits when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCredits();
+    }, [])
+  );
 
   useEffect(() => {
     loadCredits();
@@ -48,39 +55,15 @@ export const BuyCreditsScreen: React.FC = () => {
         if (supported) {
           await Linking.openURL(result.checkout_url);
           
-          // Show success message and go back
+          // Show success message
           Alert.alert(
-            'Checkout Opened',
-            'Complete your purchase in the browser. Your credits will be added automatically after payment.',
+            'Complete Your Purchase',
+            'You will be taken to Stripe to complete payment. After paying, you can close the browser and return to the app. Credits will appear automatically.',
             [
               {
-                text: 'OK',
+                text: 'Got It',
                 onPress: () => {
-                  navigation.goBack();
-                  // Auto-sync credits after payment completion (multiple attempts)
-                  const attemptSync = async (attempt = 1, maxAttempts = 6) => {
-                    try {
-                      console.log(`🔄 Auto-sync attempt ${attempt}/${maxAttempts}...`);
-                      const syncResult = await syncPendingCredits();
-                      if (syncResult.creditsAdded > 0) {
-                        console.log(`✅ Auto-synced ${syncResult.creditsAdded} credits on attempt ${attempt}`);
-                        return;
-                      }
-                      
-                      // If no credits found and we haven't reached max attempts, try again
-                      if (attempt < maxAttempts) {
-                        setTimeout(() => attemptSync(attempt + 1, maxAttempts), 5000);
-                      }
-                    } catch (error) {
-                      console.error(`Auto-sync attempt ${attempt} failed:`, error);
-                      if (attempt < maxAttempts) {
-                        setTimeout(() => attemptSync(attempt + 1, maxAttempts), 5000);
-                      }
-                    }
-                  };
-                  
-                  // Start first attempt after 3 seconds
-                  setTimeout(() => attemptSync(), 3000);
+                  // Stay on this screen so they can see updated credits when they return
                 }
               }
             ]
@@ -122,7 +105,7 @@ export const BuyCreditsScreen: React.FC = () => {
       </Text>
       
       {loading && selectedPackage === pkg.id && (
-        <ActivityIndicator style={styles.packageLoader} size="small" color="#007AFF" />
+        <ActivityIndicator style={styles.packageLoader} size="small" color="#7C3AED" />
       )}
     </TouchableOpacity>
   );
@@ -147,7 +130,8 @@ export const BuyCreditsScreen: React.FC = () => {
             • Buy in bulk to save money{'\n'}
             • Credits never expire{'\n'}
             • Secure payment via Stripe{'\n'}
-            • Credits added automatically after payment
+            • After paying, close the browser and return here{'\n'}
+            • Credits appear automatically within seconds
           </Text>
         </View>
       </ScrollView>
@@ -202,14 +186,14 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   popularPackage: {
-    borderColor: '#007AFF',
-    backgroundColor: '#f0f8ff',
+    borderColor: '#7C3AED',
+    backgroundColor: '#f5f0ff',
   },
   savingsBadge: {
     position: 'absolute',
     top: -10,
     right: 10,
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
@@ -231,7 +215,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
-    color: '#007AFF',
+    color: '#7C3AED',
     marginBottom: 4,
   },
   packagePricePerCredit: {

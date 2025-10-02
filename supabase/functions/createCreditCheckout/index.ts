@@ -193,8 +193,8 @@ Deno.serve(async (req) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `https://example.com/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://example.com/cancel`,
+      success_url: `https://leadsong.app/return`,
+      cancel_url: `https://leadsong.app`,
       customer_email: email,
       metadata: {
         purchase_id: purchase.id,

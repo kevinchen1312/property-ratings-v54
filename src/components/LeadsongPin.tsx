@@ -66,13 +66,13 @@ export default function LeadsongPin({
         opacity="0.5"
       />
       {/* Gap between head and body (purple shows through) */}
-      {/* Tapered handle body (wider) */}
+      {/* Tapered handle body (wider and longer) */}
       <Path 
-        d="M44 52 L56 52 L53 76 Q50 78 50 78 Q50 78 47 76 Z"
+        d="M43 52 L57 52 L54 80 Q50 82 50 82 Q50 82 46 80 Z"
         fill={iconColor}
       />
       {/* Purple button on body */}
-      <Circle cx="50" cy="62" r="2.5" fill={pinColor} />
+      <Circle cx="50" cy="64" r="2.5" fill={pinColor} />
     </Svg>
   );
 }

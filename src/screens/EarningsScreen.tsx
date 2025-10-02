@@ -283,7 +283,7 @@ export const EarningsScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color="#7C3AED" />
         <Text style={styles.loadingText}>Loading earnings...</Text>
       </View>
     );
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   statusBadge: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#7C3AED',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -509,7 +509,7 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontWeight: '700',
     fontFamily: GlobalFonts.bold,
-    color: '#2E7D32',
+    color: '#7C3AED',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   setupButton: {
-    backgroundColor: '#1976D2',
+    backgroundColor: '#7C3AED',
     borderRadius: 8,
     padding: 16,
   },
@@ -540,10 +540,10 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   warningButton: {
-    backgroundColor: '#FF9800',
+    backgroundColor: '#7C3AED',
   },
   successButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#7C3AED',
   },
   secondaryButton: {
     backgroundColor: '#666',
@@ -559,24 +559,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   infoCard: {
-    backgroundColor: '#E8F5E8',
+    backgroundColor: '#F5F0FF',
     margin: 20,
     padding: 16,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#2E7D32',
+    borderLeftColor: '#7C3AED',
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
-    color: '#1B5E20',
+    color: '#7C3AED',
     marginBottom: 8,
   },
   infoText: {
     fontSize: 14,
     fontFamily: GlobalFonts.regular,
-    color: '#2E7D32',
+    color: '#7C3AED',
     lineHeight: 20,
   },
   boldText: {
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
-    color: '#2E7D32',
+    color: '#7C3AED',
   },
   contributorBadge: {
     paddingHorizontal: 8,
@@ -622,10 +622,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   topContributorBadge: {
-    backgroundColor: '#FFD700',
+    backgroundColor: '#7C3AED',
   },
   otherContributorBadge: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#F5F0FF',
   },
   contributorBadgeText: {
     fontSize: 10,
@@ -633,10 +633,10 @@ const styles = StyleSheet.create({
     fontFamily: GlobalFonts.bold,
   },
   topContributorText: {
-    color: '#B8860B',
+    color: '#FFFFFF',
   },
   otherContributorText: {
-    color: '#1976D2',
+    color: '#7C3AED',
   },
   payoutDetails: {
     fontSize: 14,
@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
-    color: '#2E7D32',
+    color: '#7C3AED',
   },
   statDate: {
     fontSize: 12,
@@ -706,8 +706,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   completedStatus: {
-    backgroundColor: '#E8F5E8',
-    color: '#2E7D32',
+    backgroundColor: '#F5F0FF',
+    color: '#7C3AED',
   },
   historyDate: {
     fontSize: 12,
