@@ -1,13 +1,50 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
+import { View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Linking from 'expo-linking';
+import { useFonts, BalsamiqSans_400Regular, BalsamiqSans_700Bold } from '@expo-google-fonts/balsamiq-sans';
 import { RootNavigator } from './src/navigation';
 
+const linking = {
+  prefixes: [
+    'property-ratings://', // Deep link scheme
+    'exp://192.168.12.238:8088', // Expo Go development
+    'exp://localhost:8088', // Local development
+  ],
+  config: {
+    screens: {
+      Auth: 'auth',
+      EmailConfirm: 'auth/callback',
+      Map: 'map',
+      ReportPreview: 'report/:propertyId',
+      Earnings: 'earnings',
+      Analytics: 'analytics',
+    },
+  },
+};
+
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    BalsamiqSans_400Regular,
+    BalsamiqSans_700Bold,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <RootNavigator />
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <NavigationContainer linking={linking}>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }

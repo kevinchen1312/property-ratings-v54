@@ -11,12 +11,15 @@ import {
   ScrollView,
 } from 'react-native';
 import { signUp, signIn } from '../lib/auth';
+import { GlobalFonts } from '../styles/global';
 
 export const AuthScreen: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -27,6 +30,16 @@ export const AuthScreen: React.FC = () => {
   };
 
   const validateForm = () => {
+    if (isSignUp) {
+      if (!firstName.trim()) {
+        Alert.alert('Error', 'First name is required');
+        return false;
+      }
+      if (!lastName.trim()) {
+        Alert.alert('Error', 'Last name is required');
+        return false;
+      }
+    }
     if (!email.trim()) {
       Alert.alert('Error', 'Email is required');
       return false;
@@ -56,7 +69,7 @@ export const AuthScreen: React.FC = () => {
     setLoading(true);
     try {
       if (isSignUp) {
-        const { data, error } = await signUp(email, password);
+        const { data, error } = await signUp(email, password, firstName, lastName);
         if (error) {
           Alert.alert('Sign Up Error', error.message);
         } else {
@@ -85,6 +98,8 @@ export const AuthScreen: React.FC = () => {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setFirstName('');
+    setLastName('');
     setShowPassword(false);
     setShowConfirmPassword(false);
   };
@@ -103,6 +118,38 @@ export const AuthScreen: React.FC = () => {
         </View>
 
         <View style={styles.form}>
+          {isSignUp && (
+            <>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>First Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="Enter your first name"
+                  placeholderTextColor="#999"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Last Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Enter your last name"
+                  placeholderTextColor="#999"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+            </>
+          )}
+
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -239,11 +286,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#007AFF',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     textAlign: 'center',
   },
@@ -272,6 +321,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
   },
   buttonRow: {
@@ -287,6 +337,7 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
   },
   clearButton: {
     paddingHorizontal: 8,
@@ -296,6 +347,7 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
   },
   input: {
     borderWidth: 1,
@@ -303,6 +355,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     backgroundColor: '#fff',
   },
   authButton: {
@@ -319,6 +372,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
   },
   switchButton: {
     marginTop: 20,
@@ -327,5 +381,6 @@ const styles = StyleSheet.create({
   switchButtonText: {
     color: '#007AFF',
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
   },
 });

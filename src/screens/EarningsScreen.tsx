@@ -21,6 +21,7 @@ import {
   getUserStripeAccount,
   requestPayout
 } from '../services/stripeConnect';
+import { GlobalFonts } from '../styles/global';
 
 interface PendingPayout {
   id: string;
@@ -457,6 +458,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
   },
   header: {
@@ -469,6 +471,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
   },
   statusBadge: {
@@ -481,6 +484,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
   summaryCard: {
     backgroundColor: '#fff',
@@ -496,6 +500,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginBottom: 8,
     textAlign: 'center',
@@ -503,12 +508,14 @@ const styles = StyleSheet.create({
   availableAmount: {
     fontSize: 36,
     fontWeight: '700',
+    fontFamily: GlobalFonts.bold,
     color: '#2E7D32',
     textAlign: 'center',
     marginBottom: 8,
   },
   payoutCountText: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     textAlign: 'center',
   },
@@ -525,6 +532,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     textAlign: 'center',
   },
   disabledButton: {
@@ -561,11 +569,13 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#1B5E20',
     marginBottom: 8,
   },
   infoText: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#2E7D32',
     lineHeight: 20,
   },
@@ -579,6 +589,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 12,
   },
@@ -602,6 +613,7 @@ const styles = StyleSheet.create({
   payoutAmount: {
     fontSize: 18,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#2E7D32',
   },
   contributorBadge: {
@@ -618,6 +630,7 @@ const styles = StyleSheet.create({
   contributorBadgeText: {
     fontSize: 10,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
   topContributorText: {
     color: '#B8860B',
@@ -627,11 +640,13 @@ const styles = StyleSheet.create({
   },
   payoutDetails: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginBottom: 4,
   },
   payoutDate: {
     fontSize: 12,
+    fontFamily: GlobalFonts.regular,
     color: '#999',
   },
   statItem: {
@@ -646,6 +661,7 @@ const styles = StyleSheet.create({
   statProperty: {
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
     color: '#333',
   },
   statDetails: {
@@ -654,10 +670,12 @@ const styles = StyleSheet.create({
   statRatings: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#2E7D32',
   },
   statDate: {
     fontSize: 12,
+    fontFamily: GlobalFonts.regular,
     color: '#999',
   },
   historyItem: {
@@ -675,11 +693,13 @@ const styles = StyleSheet.create({
   historyAmount: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
   },
   historyStatus: {
     fontSize: 12,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     textTransform: 'uppercase',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -691,6 +711,7 @@ const styles = StyleSheet.create({
   },
   historyDate: {
     fontSize: 12,
+    fontFamily: GlobalFonts.regular,
     color: '#999',
   },
   emptyState: {
@@ -703,12 +724,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 12,
     textAlign: 'center',
   },
   emptyText: {
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     textAlign: 'center',
     marginBottom: 8,
@@ -716,6 +739,7 @@ const styles = StyleSheet.create({
   },
   emptySubtext: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#999',
     textAlign: 'center',
     lineHeight: 20,

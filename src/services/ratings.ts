@@ -3,8 +3,8 @@ import { Alert } from 'react-native';
 
 export interface RatingSubmission {
   propertyId: string;
-  noise: number;
   safety: number;
+  quietness: number;
   cleanliness: number;
   userLat: number;
   userLng: number;
@@ -125,23 +125,23 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
   // Prepare rating records - only include non-zero ratings
   const ratings = [];
   
-  if (submission.noise > 0) {
-    ratings.push({
-      user_id: userId,
-      property_id: submission.propertyId,
-      attribute: 'noise',
-      stars: submission.noise,
-      user_lat: submission.userLat,
-      user_lng: submission.userLng,
-    });
-  }
-  
   if (submission.safety > 0) {
     ratings.push({
       user_id: userId,
       property_id: submission.propertyId,
       attribute: 'safety',
       stars: submission.safety,
+      user_lat: submission.userLat,
+      user_lng: submission.userLng,
+    });
+  }
+  
+  if (submission.quietness > 0) {
+    ratings.push({
+      user_id: userId,
+      property_id: submission.propertyId,
+      attribute: 'quietness',
+      stars: submission.quietness,
       user_lat: submission.userLat,
       user_lng: submission.userLng,
     });

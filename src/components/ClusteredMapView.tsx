@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import MapView, { Marker, Region, Circle } from 'react-native-maps';
+import * as Location from 'expo-location';
 import Supercluster from 'supercluster';
 import { Property } from '../lib/types';
+import LeadsongPin from './LeadsongPin';
 
 interface ClusteredMapViewProps {
   properties: Property[];
   onPropertyPress?: (property: Property) => void;
+  onMapPress?: () => void;
   initialRegion?: Region;
   style?: any;
   userLocation?: { latitude: number; longitude: number } | null;
   selectedProperty?: Property | null;
   enableProximityLoading?: boolean;
   ratedPropertyIds?: Set<string>; // Track which properties user has rated
+  autoOrientEnabled?: boolean; // Auto-rotate map to match device direction
+  onCenterButtonPress?: () => void; // Called when center button is pressed to re-enable auto-rotation
   ref?: React.RefObject<MapView>;
 }
 
@@ -68,8 +73,19 @@ const ClusterMarker: React.FC<ClusterMarkerProps> = ({ point, onPress, isRated }
       key={`property-${property?.id}`}
       coordinate={{ latitude, longitude }}
       onPress={() => onPress(point)}
-      pinColor={isRated ? '#999999' : 'red'} // Gray for rated, red for unrated
-    />
+      anchor={{ x: 0.5, y: 1.0 }}
+      centerOffset={{ x: 0, y: -20 }}
+      flat={false}
+      tracksViewChanges={false}
+      zIndex={1000}
+    >
+      <LeadsongPin
+        size={40}
+        pinColor={isRated ? '#999999' : '#7C3AED'}
+        iconColor="#FFFFFF"
+        shadow={false}
+      />
+    </Marker>
   );
 };
 
@@ -84,12 +100,15 @@ const getClusterColor = (pointCount: number): string => {
 export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>(({
   properties,
   onPropertyPress,
+  onMapPress,
   initialRegion,
   style,
   userLocation,
   selectedProperty,
   enableProximityLoading = false,
-  ratedPropertyIds = new Set()
+  ratedPropertyIds = new Set(),
+  autoOrientEnabled = true,
+  onCenterButtonPress
 }, ref) => {
   const mapRef = ref as React.RefObject<MapView> || useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
@@ -104,6 +123,12 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   // VIEWPORT-BASED LOADING: Load properties dynamically based on current view or proximity
   const [viewportProperties, setViewportProperties] = useState<Property[]>([]);
   const [proximityProperties, setProximityProperties] = useState<Property[]>([]);
+  
+  // Device heading for initial and continuous orientation
+  const [initialHeading, setInitialHeading] = useState<number>(0);
+  const [currentHeading, setCurrentHeading] = useState<number>(0);
+  const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const hasManuallyRotatedRef = useRef<boolean>(false);
   
   // Load properties for current viewport or proximity
   useEffect(() => {
@@ -125,13 +150,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
           setViewportProperties([]); // Clear viewport properties when using proximity
         } else {
           // VIEWPORT-BASED LOADING: Load properties based on current view
-          // Only load when zoomed in enough (performance optimization)
-          if (zoom < 12) {
-            setViewportProperties([]);
-            setProximityProperties([]);
-            return;
-          }
-
+          
           const bounds = {
             north: region.latitude + region.latitudeDelta,
             south: region.latitude - region.latitudeDelta,
@@ -155,13 +174,71 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
     loadProperties();
   }, [region, userLocation, enableProximityLoading]);
 
+  // Get initial device heading and set up continuous tracking
+  useEffect(() => {
+    const setupHeadingTracking = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        // Get initial heading
+        const headingData = await Location.getHeadingAsync();
+        const deviceHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
+        setInitialHeading(deviceHeading);
+        setCurrentHeading(deviceHeading);
+        console.log(`🧭 Initial heading: ${deviceHeading}°`);
+
+        // Set up continuous heading tracking if auto-orient is enabled
+        if (autoOrientEnabled) {
+          headingSubscriptionRef.current = await Location.watchHeadingAsync(
+            (headingUpdate) => {
+              const newHeading = headingUpdate.trueHeading >= 0 
+                ? headingUpdate.trueHeading 
+                : headingUpdate.magHeading;
+              
+              setCurrentHeading(newHeading);
+              
+              // Auto-rotate the map if enabled and user hasn't manually rotated
+              if (autoOrientEnabled && !hasManuallyRotatedRef.current && mapRef.current) {
+                mapRef.current.getCamera().then(camera => {
+                  mapRef.current?.animateCamera({
+                    ...camera,
+                    heading: newHeading,
+                  }, { duration: 300 });
+                }).catch(() => {
+                  // Silently handle
+                });
+              }
+            }
+          );
+          console.log('🧭 Started watching device heading');
+        }
+      } catch (error) {
+        // Silently handle - non-fatal
+        setInitialHeading(0);
+        setCurrentHeading(0);
+      }
+    };
+
+    setupHeadingTracking();
+
+    // Cleanup on unmount or when autoOrientEnabled changes
+    return () => {
+      if (headingSubscriptionRef.current) {
+        headingSubscriptionRef.current.remove();
+        headingSubscriptionRef.current = null;
+        console.log('🧭 Stopped watching device heading');
+      }
+    };
+  }, [autoOrientEnabled]); // Re-run when auto-orient setting changes
+
   // Initialize supercluster with properties (viewport or proximity)
   const supercluster = useMemo(() => {
     const cluster = new Supercluster({
       radius: 60,
       maxZoom: 16,
       minZoom: 0,
-      minPoints: 2,
+      minPoints: 999999, // Disable clustering - always show individual pins
     });
 
     // Use proximity properties if available, otherwise viewport properties
@@ -226,20 +303,90 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
     setRegion(newRegion);
   };
 
+  // Detect manual rotation by user
+  const handlePanDrag = () => {
+    // User is manually interacting with the map
+    // This will permanently disable auto-rotation until center button is pressed
+    hasManuallyRotatedRef.current = true;
+    console.log('🔒 Auto-rotation disabled due to manual interaction');
+  };
+
+  // Re-enable auto-rotation and center on user when custom button is pressed
+  const handleCenterButtonPress = () => {
+    if (userLocation && mapRef.current) {
+      // Re-enable auto-rotation
+      hasManuallyRotatedRef.current = false;
+      console.log('🔓 Auto-rotation re-enabled via center button');
+      
+      // Animate camera to user location with current device heading
+      mapRef.current.animateCamera({
+        center: {
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+        },
+        pitch: 45,
+        heading: currentHeading, // Use current device heading for auto-orientation
+        altitude: 200,
+        zoom: 19,
+      }, { duration: 500 });
+      
+      // Notify parent component if callback is provided
+      if (onCenterButtonPress) {
+        onCenterButtonPress();
+      }
+    }
+  };
+
+  // Trigger region sync on map ready to load all pins immediately
+  const handleMapReady = () => {
+    if (mapRef.current) {
+      // Small delay to ensure map is fully ready
+      setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.getCamera().then(camera => {
+            // Update region to match the actual visible area
+            const newRegion = {
+              latitude: camera.center.latitude,
+              longitude: camera.center.longitude,
+              latitudeDelta: 0.003,
+              longitudeDelta: 0.003,
+            };
+            setRegion(newRegion);
+          }).catch(() => {
+            // Silently handle
+          });
+        }
+      }, 100);
+    }
+  };
+
   return (
     <View style={[styles.container, style]}>
       <MapView
         ref={mapRef}
         style={styles.map}
         initialRegion={region}
+        initialCamera={{
+          center: {
+            latitude: region.latitude,
+            longitude: region.longitude,
+          },
+          pitch: 45, // 3D tilt angle
+          heading: 0, // North-up orientation (same as center button default)
+          altitude: 200, // Lower altitude = more zoomed in
+          zoom: 19, // Higher zoom = closer view
+        }}
+        onMapReady={handleMapReady}
         onRegionChangeComplete={handleRegionChangeComplete}
-        showsUserLocation
-        showsMyLocationButton
+        onPress={onMapPress}
+        onPanDrag={handlePanDrag} // Detect manual rotation/panning
+        showsUserLocation={false}
+        showsMyLocationButton={false} // Hide default button, use custom one
         showsCompass
         showsScale
         loadingEnabled
         rotateEnabled={true}  // Enable rotation
-        pitchEnabled={false}
+        pitchEnabled={false}  // Disable 3D tilt/pitch gestures
         scrollEnabled={true}
         zoomEnabled={true}
         zoomTapEnabled={true}
@@ -257,6 +404,23 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
             fillColor="rgba(34, 197, 94, 0.1)"
             strokeWidth={2}
           />
+        )}
+        
+        {/* Custom user location marker (black) */}
+        {userLocation && (
+          <Marker
+            coordinate={{
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+            }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat={true}
+            style={{ transform: [{ perspective: 1000 }] }}
+          >
+            <View style={styles.userLocationMarker}>
+              <View style={styles.userLocationDot} />
+            </View>
+          </Marker>
         )}
         
         {/* 200m circle around selected property */}
@@ -288,14 +452,16 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         })}
       </MapView>
       
-      <View style={styles.statsContainer}>
-        <Text style={styles.statsText}>
-          {enableProximityLoading && proximityProperties.length > 0 
-            ? `Showing: ${clusters.length} markers | OSM Proximity: ${proximityProperties.length} properties (75m)`
-            : `Showing: ${clusters.length} markers | Viewport: ${viewportProperties.length} properties`
-          }
-        </Text>
-      </View>
+      {/* Custom center/location button */}
+      <TouchableOpacity 
+        style={styles.centerButton}
+        onPress={handleCenterButtonPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.centerButtonInner}>
+          <Text style={styles.centerButtonIcon}>▲</Text>
+        </View>
+      </TouchableOpacity>
     </View>
   );
 });
@@ -333,20 +499,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  statsContainer: {
+  centerButton: {
     position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 8,
-    borderRadius: 8,
+    bottom: 100,
+    left: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  statsText: {
-    fontSize: 12,
-    color: '#333',
-    fontWeight: '500',
+  centerButtonInner: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerButtonIcon: {
+    fontSize: 24,
+    color: '#fff',
+  },
+  userLocationMarker: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: [{ scaleY: 0.65 }],
+  },
+  userLocationDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#000000',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 5,
   },
 });
 

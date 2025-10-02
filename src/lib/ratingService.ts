@@ -109,8 +109,8 @@ export const fetchPropertyRatings = async (propertyIds: string[]): Promise<Recor
     }
     if (rating.attribute && rating.avg_rating) {
       const ratingMap = ratingsMap[rating.id];
-      const attribute = rating.attribute as 'noise' | 'safety' | 'cleanliness';
-      if (attribute === 'noise' || attribute === 'safety' || attribute === 'cleanliness') {
+      const attribute = rating.attribute as 'safety' | 'quietness' | 'cleanliness';
+      if (attribute === 'safety' || attribute === 'quietness' || attribute === 'cleanliness') {
         ratingMap[attribute] = rating.avg_rating;
       }
     }

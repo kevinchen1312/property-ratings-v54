@@ -21,10 +21,17 @@ export function onAuthStateChange(callback: (session: Session | null) => void) {
   });
 }
 
-export async function signUp(email: string, password: string) {
+export async function signUp(email: string, password: string, firstName: string, lastName: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      data: {
+        first_name: firstName,
+        last_name: lastName,
+        full_name: `${firstName} ${lastName}`,
+      },
+    },
   });
   return { data, error };
 }

@@ -18,13 +18,15 @@ export interface Property {
   avg_rating?: number;
   rating_count?: number;
   ratings?: {
-    noise?: number;
     safety?: number;
+    quietness?: number;
     cleanliness?: number;
   };
+  // For search results
+  isNew?: boolean; // Flag for properties not yet in database
 }
 
-export type RatingAttribute = 'noise' | 'safety' | 'cleanliness';
+export type RatingAttribute = 'safety' | 'quietness' | 'cleanliness';
 
 export interface Rating {
   id: string;

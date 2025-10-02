@@ -1,5 +1,4 @@
 // supabase/functions/redeemReports/index.ts
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
 
@@ -504,6 +503,20 @@ Deno.serve(async (req) => {
       // Generate PDF
       const pdfBuffer = await generatePDFReport(admin, propertyId);
 
+      // Format address: remove comma between number and street
+      const formatAddress = (addr: string) => {
+        const parts = addr.split(',').map(p => p.trim());
+        if (parts.length >= 3) {
+          // Extract city and state/zip
+          const city = parts[parts.length - 2] || '';
+          const stateZip = parts[parts.length - 1] || '';
+          return `${city}, ${stateZip}`;
+        }
+        return addr;
+      };
+      
+      const formattedAddress = formatAddress(propertyData.address);
+      
       // Send email with PDF attachment
       const emailResponse = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -512,36 +525,34 @@ Deno.serve(async (req) => {
           'Authorization': `Bearer ${RESEND_API_KEY}`
         },
         body: JSON.stringify({
-          from: `Property Ratings <${FROM_EMAIL}>`,
+          from: `Leadsong Reports <${FROM_EMAIL}>`,
           to: [toEmail],
-          subject: `Property Rating Report - ${cleanText(propertyData.name)}`,
+          subject: `Your Leadsong Report for ${cleanText(propertyData.name)}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #007AFF;">Your Property Rating Report is Ready!</h1>
+              <h1 style="color: #007AFF;">Your Leadsong Report is Ready!</h1>
               
-              <p>Hello!</p>
+              <p>Dear user,</p>
               
-              <p>Your requested property rating report for <strong>${cleanText(propertyData.name)}</strong> has been generated and is attached to this email as a PDF.</p>
+              <p>Your Leadsong report for <strong>${cleanText(propertyData.name)}, ${cleanText(formattedAddress)}</strong> has been generated and is attached to this email as a PDF.</p>
               
               <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <h3 style="margin-top: 0; color: #007AFF;">Property Details</h3>
                 <p><strong>Name:</strong> ${cleanText(propertyData.name)}</p>
-                <p><strong>Address:</strong> ${cleanText(propertyData.address)}</p>
+                <p><strong>Address:</strong> ${cleanText(formattedAddress)}</p>
                 <p><strong>Report Generated:</strong> ${new Date().toLocaleDateString()}</p>
               </div>
               
-              <p>The attached PDF report includes:</p>
+              <p>The attached PDF report includes the property's:</p>
               <ul>
-                <li>Overall rating averages</li>
-                <li>Weekly trends (last 8 weeks)</li>
-                <li>Recent rating activity</li>
-                <li>Detailed property information</li>
+                <li>All-time average ratings</li>
+                <li>Monthly average ratings</li>
+                <li>Daily average ratings</li>
+                <li>Hourly ratings</li>
               </ul>
               
-              <p>If you have any questions about this report, please don't hesitate to contact us.</p>
-              
-              <p>Best regards,<br>
-              The Property Ratings Team</p>
+              <p>Best Regards,<br>
+              Leadsong Reports</p>
               
               <hr style="margin: 30px 0; border: none; border-top: 1px solid #e9ecef;">
               <p style="font-size: 12px; color: #6c757d;">

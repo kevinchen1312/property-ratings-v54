@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
+import { StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapScreen } from '../screens/MapScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
 import { EarningsScreen } from '../screens/EarningsScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
-import { getInitialSession, onAuthStateChange, signOut } from '../lib/auth';
+import { BuyCreditsScreen } from '../screens/BuyCreditsScreen';
+import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
+import { getInitialSession, onAuthStateChange } from '../lib/auth';
 import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
+import { GlobalFonts } from '../styles/global';
 
 export type RootStackParamList = {
   Map: undefined;
   Auth: undefined;
+  EmailConfirm: undefined;
   ReportPreview: {
     propertyId: string;
     propertyName?: string;
   };
   Earnings: undefined;
   Analytics: undefined;
+  BuyCredits: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -26,6 +32,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [autoOrientEnabled, setAutoOrientEnabled] = useState(true); // Default to ON
 
   useEffect(() => {
     // Get initial session
@@ -39,27 +46,21 @@ export const RootNavigator: React.FC = () => {
       setSession(session);
     });
 
+    // Load auto-orient setting
+    loadAutoOrientSetting();
+
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogout = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await signOut();
-            if (error) {
-              Alert.alert('Error', 'Failed to sign out');
-            }
-          },
-        },
-      ]
-    );
+  const loadAutoOrientSetting = async () => {
+    try {
+      const value = await AsyncStorage.getItem('autoOrientEnabled');
+      if (value !== null) {
+        setAutoOrientEnabled(value === 'true');
+      }
+    } catch (error) {
+      // Silently handle - use default value
+    }
   };
 
   if (loading) {
@@ -67,28 +68,18 @@ export const RootNavigator: React.FC = () => {
   }
 
   return (
+    <>
     <Stack.Navigator>
       {session ? (
         <>
           <Stack.Screen
             name="Map"
-            component={MapScreen}
             options={{
-              title: 'Property Map',
-              headerStyle: {
-                backgroundColor: '#007AFF',
-              },
-              headerTintColor: '#fff',
-              headerTitleStyle: {
-                fontWeight: 'bold',
-              },
-              headerRight: () => (
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                  <Text style={styles.logoutButtonText}>Logout</Text>
-                </TouchableOpacity>
-              ),
+              headerShown: false,
             }}
-          />
+          >
+            {(props) => <MapScreen {...props} autoOrientEnabled={autoOrientEnabled} />}
+          </Stack.Screen>
           <Stack.Screen
             name="ReportPreview"
             component={ReportPreviewScreen}
@@ -100,6 +91,7 @@ export const RootNavigator: React.FC = () => {
               headerTintColor: '#fff',
               headerTitleStyle: {
                 fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
               },
             }}
           />
@@ -114,6 +106,7 @@ export const RootNavigator: React.FC = () => {
               headerTintColor: '#fff',
               headerTitleStyle: {
                 fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
               },
             }}
           />
@@ -128,33 +121,49 @@ export const RootNavigator: React.FC = () => {
               headerTintColor: '#fff',
               headerTitleStyle: {
                 fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
+              },
+            }}
+          />
+          <Stack.Screen
+            name="BuyCredits"
+            component={BuyCreditsScreen}
+            options={{
+              title: 'Buy Credits',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
               },
             }}
           />
         </>
       ) : (
-        <Stack.Screen
-          name="Auth"
-          component={AuthScreen}
-          options={{
-            headerShown: false,
-          }}
-        />
+        <>
+          <Stack.Screen
+            name="Auth"
+            component={AuthScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="EmailConfirm"
+            component={EmailConfirmScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+        </>
       )}
     </Stack.Navigator>
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  logoutButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  // No styles needed - settings moved to MapScreen
 });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard, Switch } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
@@ -14,16 +15,22 @@ import { submitRatings, checkHourlyRateLimit } from '../services/ratings';
 import { RootStackParamList } from '../navigation';
 import { redeemReports, getUserCredits } from '../services/reportsApi';
 import { supabase } from '../lib/supabase';
-import { CreditPurchaseModal } from '../components/CreditPurchaseModal';
 import { syncPendingCredits } from '../services/creditSync';
 import { searchProperties } from '../services/properties';
+import { sanitizeUsername } from '../lib/profanityFilter';
+import { GlobalFonts } from '../styles/global';
+import { FloatingMenu } from '../components/FloatingMenu';
 // Properties loaded dynamically by ClusteredMapView
 
 const { width, height } = Dimensions.get('window');
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Map'>;
 
-export const MapScreen: React.FC = () => {
+interface MapScreenProps {
+  autoOrientEnabled: boolean;
+}
+
+export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
   const navigation = useNavigation<NavigationProp>();
   const [location, setLocation] = useState<LatLng | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +40,8 @@ export const MapScreen: React.FC = () => {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [distance, setDistance] = useState<number>(0);
   const [ratings, setRatings] = useState({
-    noise: 0,
     safety: 0,
+    quietness: 0,
     cleanliness: 0,
   });
   const [submitting, setSubmitting] = useState(false);
@@ -54,11 +61,21 @@ export const MapScreen: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
-  // Menu expansion state
-  const [menuExpanded, setMenuExpanded] = useState(false);
+  // Settings modal state
+  const [settingsVisible, setSettingsVisible] = useState(false);
   
   // Track which properties the user has rated
   const [ratedPropertyIds, setRatedPropertyIds] = useState<Set<string>>(new Set());
+  
+  // Leaderboard state
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState<Array<{
+    user_id: string;
+    full_name: string;
+    rating_count: number;
+    rank: number;
+  }>>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   
   // Load recently rated properties (within past hour) on mount
   useEffect(() => {
@@ -107,35 +124,84 @@ export const MapScreen: React.FC = () => {
   // Function to center map on user location with proper zoom
   const centerOnUserLocation = useCallback(() => {
     if (location && mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: location.latitude,
-        longitude: location.longitude,
-        latitudeDelta: 0.0015, // More zoomed in to see individual pins clearly
-        longitudeDelta: 0.0015,
-      }, 1000); // 1 second animation
+      mapRef.current.animateCamera({
+        center: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+        },
+        pitch: 45, // 3D tilt angle
+        altitude: 200, // Lower altitude = more zoomed in
+        zoom: 19, // Higher zoom = closer view
+      }, { duration: 1000 }); // 1 second animation
     }
   }, [location]);
 
-  // Search for properties
-  const handleSearch = useCallback(async (query: string) => {
+  // Debounce timer and latest query tracking
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const latestSearchQueryRef = useRef<string>('');
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Search for properties with debouncing
+  const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
+    latestSearchQueryRef.current = query;
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
     
     if (query.length < 2) {
       setSearchResults([]);
       setShowSearchResults(false);
+      setIsSearching(false);
       return;
     }
 
+    // Show loading
     setIsSearching(true);
-    try {
-      const results = await searchProperties(query);
-      setSearchResults(results);
-      setShowSearchResults(true);
-    } catch (error) {
-      Alert.alert('Search Error', 'Failed to search properties');
-    } finally {
-      setIsSearching(false);
-    }
+    
+    // Debounce: wait 200ms after user stops typing
+    searchTimeoutRef.current = setTimeout(async () => {
+      const searchQuery = query; // Capture current query
+      
+      try {
+        const results = await searchProperties(searchQuery);
+        
+        // Only update if this is still the latest search
+        if (searchQuery === latestSearchQueryRef.current) {
+          setSearchResults(results);
+          setShowSearchResults(true);
+        }
+      } catch (error) {
+        // Only update if this is still the latest search
+        if (searchQuery === latestSearchQueryRef.current) {
+          setSearchResults([]);
+          setShowSearchResults(false);
+        }
+      } finally {
+        // Only update loading if this is still the latest search
+        if (searchQuery === latestSearchQueryRef.current) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+  }, []);
+
+  // Handle map press - dismiss keyboard and search
+  const handleMapPress = useCallback(() => {
+    Keyboard.dismiss();
+    setShowSearchResults(false);
+    setSearchQuery('');
+    setSearchResults([]);
   }, []);
 
   // Handle selecting a search result
@@ -248,7 +314,9 @@ export const MapScreen: React.FC = () => {
 
   const handleMarkerPress = useCallback(async (property: Property) => {
     setSelectedProperty(property);
-    setRatings({ noise: 0, safety: 0, cleanliness: 0 });
+    setRatings({ safety: 0, quietness: 0, cleanliness: 0 });
+    setShowLeaderboard(false);
+    setLeaderboardData([]);
     
     if (location) {
       const dist = calculateDistance(
@@ -271,11 +339,13 @@ export const MapScreen: React.FC = () => {
   const handleModalClose = useCallback(() => {
     setModalVisible(false);
     setSelectedProperty(null);
-    setRatings({ noise: 0, safety: 0, cleanliness: 0 });
+    setRatings({ safety: 0, quietness: 0, cleanliness: 0 });
     setDistance(0);
     setHasRatedRecently(false);
     setLastRatingTime(null);
     setCountdown('');
+    setShowLeaderboard(false);
+    setLeaderboardData([]);
   }, []);
 
 
@@ -288,8 +358,8 @@ export const MapScreen: React.FC = () => {
 
     const submission: RatingSubmission = {
       propertyId: selectedProperty.id,
-      noise: ratings.noise,
       safety: ratings.safety,
+      quietness: ratings.quietness,
       cleanliness: ratings.cleanliness,
       userLat: location.latitude,
       userLng: location.longitude,
@@ -315,6 +385,65 @@ export const MapScreen: React.FC = () => {
       setSubmitting(false);
     }
   }, [selectedProperty, location, ratings, handleModalClose]);
+
+  // Fetch leaderboard data for selected property
+  const fetchLeaderboard = useCallback(async (propertyId: string) => {
+    setLoadingLeaderboard(true);
+    try {
+      const { data, error } = await supabase
+        .from('rating')
+        .select(`
+          user_id,
+          app_user!inner(full_name)
+        `)
+        .eq('property_id', propertyId);
+
+      if (error) throw error;
+
+      // Count ratings per user
+      const userCounts: { [userId: string]: { full_name: string; count: number } } = {};
+      
+      if (data) {
+        data.forEach((rating: any) => {
+          const userId = rating.user_id;
+          const rawName = rating.app_user?.full_name || 'Anonymous';
+          // Sanitize username to censor profanity
+          const fullName = sanitizeUsername(rawName);
+          
+          if (!userCounts[userId]) {
+            userCounts[userId] = { full_name: fullName, count: 0 };
+          }
+          userCounts[userId].count += 1;
+        });
+      }
+
+      // Convert to array and sort by rating count
+      const leaderboard = Object.entries(userCounts)
+        .map(([userId, data]) => ({
+          user_id: userId,
+          full_name: data.full_name,
+          rating_count: data.count,
+          rank: 0,
+        }))
+        .sort((a, b) => b.rating_count - a.rating_count)
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+      setLeaderboardData(leaderboard);
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      Alert.alert('Error', 'Failed to load leaderboard');
+    } finally {
+      setLoadingLeaderboard(false);
+    }
+  }, []);
+
+  // Toggle leaderboard view
+  const toggleLeaderboard = useCallback(() => {
+    if (!showLeaderboard && selectedProperty) {
+      fetchLeaderboard(selectedProperty.id);
+    }
+    setShowLeaderboard(prev => !prev);
+  }, [showLeaderboard, selectedProperty, fetchLeaderboard]);
 
   // Test functions
 
@@ -371,16 +500,16 @@ export const MapScreen: React.FC = () => {
               try {
                 // Create a few test ratings for the current user
                 const testRatings = [
-                  { attribute: 'noise', stars: 4 },
                   { attribute: 'safety', stars: 5 },
+                  { attribute: 'quietness', stars: 4 },
                   { attribute: 'cleanliness', stars: 3 }
                 ];
                 
                 for (const rating of testRatings) {
                   const submission: RatingSubmission = {
                     propertyId: propertyId,
-                    noise: rating.attribute === 'noise' ? rating.stars : 0,
                     safety: rating.attribute === 'safety' ? rating.stars : 0,
+                    quietness: rating.attribute === 'quietness' ? rating.stars : 0,
                     cleanliness: rating.attribute === 'cleanliness' ? rating.stars : 0,
                     userLat: propertyLat + (Math.random() - 0.5) * 0.001, // Within 100m
                     userLng: propertyLng + (Math.random() - 0.5) * 0.001,
@@ -587,7 +716,7 @@ export const MapScreen: React.FC = () => {
 
 
   const isWithinRange = distance <= 200;
-  const hasAtLeastOneRating = ratings.noise > 0 || ratings.safety > 0 || ratings.cleanliness > 0;
+  const hasAtLeastOneRating = ratings.safety > 0 || ratings.quietness > 0 || ratings.cleanliness > 0;
   const canSubmit = isWithinRange && hasAtLeastOneRating && !submitting && !hasRatedRecently;
 
   if (loading) {
@@ -615,15 +744,15 @@ export const MapScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Search Bar */}
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search properties by address..."
-          value={searchQuery}
-          onChangeText={handleSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-        />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search any address to get a report..."
+                value={searchQuery}
+                onChangeText={handleSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
         {isSearching && (
           <ActivityIndicator style={styles.searchLoader} size="small" color="#007AFF" />
         )}
@@ -636,13 +765,77 @@ export const MapScreen: React.FC = () => {
             data={searchResults}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.searchResultItem}
-                onPress={() => handleSelectSearchResult(item)}
-              >
-                <Text style={styles.searchResultName}>{item.name}</Text>
-                <Text style={styles.searchResultAddress}>{item.address}</Text>
-              </TouchableOpacity>
+              <View style={styles.searchResultItem}>
+                <TouchableOpacity
+                  style={styles.searchResultContent}
+                  onPress={() => handleSelectSearchResult(item)}
+                >
+                  <View style={styles.searchResultTextContainer}>
+                    <Text style={styles.searchResultName}>{item.name}</Text>
+                    <Text style={styles.searchResultAddress}>{item.address}</Text>
+                    {item.isNew ? (
+                      <Text style={styles.searchResultNew}>
+                        🌍 New location - 0 ratings
+                      </Text>
+                    ) : (
+                      <Text style={styles.searchResultRatings}>
+                        {item.rating_count || 0} rating{(item.rating_count || 0) !== 1 ? 's' : ''}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.searchResultButton}
+                  onPress={async () => {
+                    setShowSearchResults(false);
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    Keyboard.dismiss();
+                    
+                    let propertyId = item.id;
+                    
+                    // If this is a new property from worldwide search, add it to DB first
+                    if (item.isNew) {
+                      try {
+                        const { data, error } = await supabase
+                          .from('property')
+                          .insert({
+                            name: item.name,
+                            address: item.address,
+                            lat: item.lat,
+                            lng: item.lng
+                          })
+                          .select()
+                          .single();
+                        
+                        if (error) throw error;
+                        if (data) {
+                          propertyId = data.id;
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Failed to add property to database');
+                        return;
+                      }
+                    }
+                    
+                    // Purchase report for this property
+                    setTestingReports(true);
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      const result = await redeemReports([propertyId], user?.email);
+                      Alert.alert('Success', `Report sent to ${user?.email}!`);
+                    } catch (error: any) {
+                      Alert.alert('Error', error.message || 'Failed to purchase report');
+                    } finally {
+                      setTestingReports(false);
+                      const updatedCredits = await getUserCredits();
+                      setUserCredits(updatedCredits);
+                    }
+                  }}
+                >
+                  <Text style={styles.searchResultButtonText}>📊 Buy (1cr)</Text>
+                </TouchableOpacity>
+              </View>
             )}
             style={styles.searchResultsList}
             keyboardShouldPersistTaps="handled"
@@ -650,52 +843,19 @@ export const MapScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Credit Controls - Collapsible Menu */}
-      <View style={styles.creditControls} pointerEvents="box-none">
-        {/* Minimized View - Always Visible */}
-        <TouchableOpacity 
-          style={styles.menuToggle}
-          onPress={() => setMenuExpanded(!menuExpanded)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.creditsText}>Credits: {userCredits}</Text>
-          <Text style={styles.toggleIcon}>{menuExpanded ? '▼' : '▲'}</Text>
-        </TouchableOpacity>
-
-        {/* Expanded Menu - Conditionally Visible */}
-        {menuExpanded && (
-          <View style={styles.expandedMenu}>
-            <TouchableOpacity 
-              style={[styles.creditButton, styles.buyCreditsButton]} 
-              onPress={() => setCreditPurchaseModalVisible(true)}
-            >
-              <Text style={styles.creditButtonText}>
-                💳 Buy Credits
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.testButton, styles.earningsButton]} 
-              onPress={() => navigation.navigate('Earnings')}
-            >
-              <Text style={styles.testButtonText}>
-                💰 Earnings
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.testButton, styles.analyticsButton]} 
-              onPress={() => navigation.navigate('Analytics')}
-            >
-              <Text style={styles.testButtonText}>
-                📊 Analytics
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+      {/* Floating Menu Button */}
+      <FloatingMenu
+        credits={userCredits}
+        onBuyCredits={() => navigation.navigate('BuyCredits')}
+        onEarnings={() => navigation.navigate('Earnings')}
+        onAnalytics={() => navigation.navigate('Analytics')}
+        onSettings={() => setSettingsVisible(true)}
+      />
       
       <ClusteredMapView
         properties={[]} // Empty array - properties loaded dynamically
         onPropertyPress={handleMarkerPress}
+        onMapPress={handleMapPress}
         initialRegion={location ? {
           latitude: location.latitude,
           longitude: location.longitude,
@@ -711,20 +871,13 @@ export const MapScreen: React.FC = () => {
         selectedProperty={selectedProperty}
         enableProximityLoading={proximityMode}
         ratedPropertyIds={ratedPropertyIds}
+        autoOrientEnabled={autoOrientEnabled}
         style={styles.map}
         ref={mapRef}
       />
       
-      {/* Center on Me Button */}
-      <TouchableOpacity 
-        style={styles.centerButton}
-        onPress={centerOnUserLocation}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.centerButtonText}>📍</Text>
-      </TouchableOpacity>
-      
       {/* CIRCLES NOW RENDERED INSIDE ClusteredMapView */}
+      {/* Center button now handled by ClusteredMapView component */}
       {false && location && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <MapView
@@ -794,20 +947,53 @@ export const MapScreen: React.FC = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Rate Property</Text>
+            <Text style={styles.modalTitle}>
+              {showLeaderboard ? 'Leaderboard' : 'Rate Property'}
+            </Text>
             <TouchableOpacity onPress={handleModalClose} style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.modalContent}>
-            {selectedProperty && (
+            {selectedProperty && !showLeaderboard && (
               <>
-                <Text style={styles.propertyName}>{selectedProperty.name}</Text>
-                <Text style={styles.propertyAddress}>{selectedProperty.address}</Text>
-                <Text style={[styles.distanceText, !isWithinRange && styles.distanceWarning]}>
-                  Distance: {Math.round(distance)}m {!isWithinRange && '(Must be within 200m to rate)'}
-                </Text>
+                <View style={styles.propertyHeaderContainer}>
+                  <View style={styles.propertyTitleContainer}>
+                    <Text style={styles.propertyName}>{selectedProperty.name}</Text>
+                    {!hasRatedRecently && (
+                      <TouchableOpacity 
+                        onPress={() => Alert.alert(
+                          'How to Rate',
+                          'Tap stars to rate • Tap the same star again to remove rating • At least one rating required',
+                          [{ text: 'Got it' }]
+                        )}
+                        style={styles.helpButton}
+                      >
+                        <Text style={styles.helpButtonText}>?</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <Text style={styles.propertyAddress}>
+                    {(() => {
+                      // Format address: "City, State Zip"
+                      const parts = selectedProperty.address.split(',').map(p => p.trim());
+                      if (parts.length >= 3) {
+                        // Assume format: "Number Street, City, State Zip" or "Number Street, City, Zip"
+                        const city = parts[parts.length - 2] || '';
+                        const stateZip = parts[parts.length - 1] || '';
+                        return `${city}, ${stateZip}`;
+                      }
+                      return selectedProperty.address;
+                    })()}
+                  </Text>
+                </View>
+                
+                {!isWithinRange && (
+                  <Text style={[styles.distanceText, styles.distanceWarning]}>
+                    Distance: {Math.round(distance)}m (Must be within 200m to rate)
+                  </Text>
+                )}
                 
                 {hasRatedRecently && (
                   <View style={styles.rateLimitContainer}>
@@ -822,24 +1008,17 @@ export const MapScreen: React.FC = () => {
                   </View>
                 )}
 
-                
-                {!hasRatedRecently && (
-                  <Text style={styles.instructionText}>
-                    Tap stars to rate • Tap the same star again to remove rating • At least one rating required
-                  </Text>
-                )}
-
                 <View style={styles.ratingsContainer}>
-                  <StarRating
-                    label="Noise Level"
-                    rating={ratings.noise}
-                    onRatingChange={(rating) => handleRatingChange('noise', rating)}
-                    disabled={!isWithinRange || hasRatedRecently}
-                  />
                   <StarRating
                     label="Safety"
                     rating={ratings.safety}
                     onRatingChange={(rating) => handleRatingChange('safety', rating)}
+                    disabled={!isWithinRange || hasRatedRecently}
+                  />
+                  <StarRating
+                    label="Quietness"
+                    rating={ratings.quietness}
+                    onRatingChange={(rating) => handleRatingChange('quietness', rating)}
                     disabled={!isWithinRange || hasRatedRecently}
                   />
                   <StarRating
@@ -871,21 +1050,168 @@ export const MapScreen: React.FC = () => {
                   disabled={testingReports}
                 >
                   <Text style={styles.previewButtonText}>
-                    {testingReports ? '📊 Generating Report...' : '📊 Generate Report'}
+                    {testingReports ? 'Generating Report...' : 'Purchase Report (1 credit)'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Leaderboard Button */}
+                <TouchableOpacity
+                  style={styles.leaderboardToggleButton}
+                  onPress={toggleLeaderboard}
+                >
+                  <Text style={styles.leaderboardToggleButtonText}>
+                    🏆 View Leaderboard
                   </Text>
                 </TouchableOpacity>
               </>
+            )}
+
+            {/* Leaderboard View */}
+            {selectedProperty && showLeaderboard && (
+              <View style={styles.leaderboardContainer}>
+                {/* Back to Rating Button */}
+                <TouchableOpacity
+                  style={styles.backToRatingButton}
+                  onPress={toggleLeaderboard}
+                >
+                  <Text style={styles.backToRatingButtonText}>
+                    ← Back to Rating
+                  </Text>
+                </TouchableOpacity>
+
+                {loadingLeaderboard ? (
+                  <View style={styles.leaderboardLoading}>
+                    <ActivityIndicator size="large" color="#007AFF" />
+                    <Text style={styles.loadingText}>Loading leaderboard...</Text>
+                  </View>
+                ) : leaderboardData.length === 0 ? (
+                  <View style={styles.emptyLeaderboard}>
+                    <Text style={styles.emptyLeaderboardText}>🏆</Text>
+                    <Text style={styles.emptyLeaderboardTitle}>No Ratings Yet</Text>
+                    <Text style={styles.emptyLeaderboardSubtitle}>
+                      Be the first to rate this property!
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.leaderboardHeader}>
+                      <Text style={styles.leaderboardTitle}>
+                        Top Contributors for {selectedProperty.name}
+                      </Text>
+                      <Text style={styles.leaderboardSubtitle}>
+                        {leaderboardData.length} {leaderboardData.length === 1 ? 'contributor' : 'contributors'}
+                      </Text>
+                    </View>
+                    <View style={styles.leaderboardList}>
+                      {leaderboardData.map((entry, index) => (
+                        <View 
+                          key={entry.user_id} 
+                          style={[
+                            styles.leaderboardItem,
+                            index < 3 && styles[`leaderboardTop${index + 1}` as 'leaderboardTop1' | 'leaderboardTop2' | 'leaderboardTop3']
+                          ]}
+                        >
+                          <View style={styles.leaderboardRank}>
+                            <Text style={styles.leaderboardRankText}>
+                              {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`}
+                            </Text>
+                          </View>
+                          <View style={styles.leaderboardInfo}>
+                            <Text style={styles.leaderboardName} numberOfLines={1}>
+                              {entry.full_name}
+                            </Text>
+                            <Text style={styles.leaderboardCount}>
+                              {entry.rating_count} {entry.rating_count === 1 ? 'rating' : 'ratings'}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </View>
             )}
           </ScrollView>
         </View>
       </Modal>
 
-      <CreditPurchaseModal
-        visible={creditPurchaseModalVisible}
-        onClose={() => setCreditPurchaseModalVisible(false)}
-        onPurchaseComplete={handleCreditPurchaseComplete}
-        currentCredits={userCredits}
-      />
+      {/* Settings Modal */}
+      <Modal
+        visible={settingsVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSettingsVisible(false)}
+      >
+        <View style={styles.settingsContainer}>
+          <View style={styles.settingsHeader}>
+            <Text style={styles.settingsTitle}>Settings</Text>
+            <TouchableOpacity onPress={() => setSettingsVisible(false)} style={styles.settingsCloseButton}>
+              <Text style={styles.settingsCloseButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.settingsContent}>
+            {/* Auto-Orient Toggle */}
+            <View style={styles.settingsOption}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingsOptionText}>🧭 Auto-Orient Map</Text>
+                  <Text style={styles.settingDescription}>
+                    Automatically rotate map to match device direction
+                  </Text>
+                </View>
+                <Switch
+                  value={autoOrientEnabled}
+                  onValueChange={async (value) => {
+                    try {
+                      await AsyncStorage.setItem('autoOrientEnabled', value.toString());
+                      // Reload app is needed for this change, so inform user
+                      Alert.alert(
+                        'Setting Updated',
+                        'Auto-orient will take effect when you restart the app.',
+                        [{ text: 'OK' }]
+                      );
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to save setting');
+                    }
+                  }}
+                  trackColor={{ false: '#d1d1d6', true: '#34C759' }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#d1d1d6"
+                />
+              </View>
+            </View>
+
+            {/* Sign Out Button */}
+            <TouchableOpacity 
+              style={styles.settingsOption} 
+              onPress={async () => {
+                setSettingsVisible(false);
+                Alert.alert(
+                  'Sign Out',
+                  'Are you sure you want to sign out?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Sign Out',
+                      style: 'destructive',
+                      onPress: async () => {
+                        const { signOut } = await import('../lib/auth');
+                        const { error } = await signOut();
+                        if (error) {
+                          Alert.alert('Error', 'Failed to sign out');
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.settingsOptionText}>🚪 Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -953,6 +1279,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
   },
   closeButton: {
@@ -960,26 +1287,54 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 18,
+    fontFamily: GlobalFonts.regular,
     color: '#007AFF',
   },
   modalContent: {
     flex: 1,
     padding: 20,
+    paddingBottom: 40,
+  },
+  propertyHeaderContainer: {
+    marginBottom: 16,
+  },
+  propertyTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   propertyName: {
     fontSize: 20,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
-    marginBottom: 8,
+    flex: 1,
+  },
+  helpButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  helpButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
   },
   propertyAddress: {
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
-    marginBottom: 16,
   },
   distanceText: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#007AFF',
     marginBottom: 20,
   },
@@ -993,6 +1348,7 @@ const styles = StyleSheet.create({
   alreadyRatedText: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#34C759',
     marginBottom: 8,
     textAlign: 'center',
@@ -1000,6 +1356,7 @@ const styles = StyleSheet.create({
   countdownText: {
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
     color: '#FF9500',
     textAlign: 'center',
     backgroundColor: '#FFF3E0',
@@ -1010,6 +1367,7 @@ const styles = StyleSheet.create({
   },
   instructionText: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginBottom: 20,
     textAlign: 'center',
@@ -1032,6 +1390,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
   },
   submittingContainer: {
     flexDirection: 'row',
@@ -1052,88 +1411,204 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
   },
-  // Credit controls styles
-  creditControls: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    borderRadius: 8,
-    zIndex: 1000,
-  },
-  menuToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  // Leaderboard toggle button (below purchase button)
+  leaderboardToggleButton: {
+    backgroundColor: '#34C759',
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    padding: 12,
+    marginTop: 12,
   },
-  toggleIcon: {
+  leaderboardToggleButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
   },
-  creditsText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  // Leaderboard styles
+  leaderboardContainer: {
+    flex: 1,
   },
-  expandedMenu: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-  },
-  testButton: {
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  reportsButton: {
-    backgroundColor: '#34C759',
-  },
-  earningsButton: {
-    backgroundColor: '#FF9500',
-  },
-  analyticsButton: {
+  backToRatingButton: {
     backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  testRatingsButton: {
-    backgroundColor: '#9C27B0',
-  },
-  syncButton: {
-    backgroundColor: '#17A2B8',
-  },
-  creditButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  creditButtonText: {
+  backToRatingButtonText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
-  buttonRow: {
+  leaderboardLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+  },
+  emptyLeaderboard: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyLeaderboardText: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyLeaderboardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+    marginBottom: 8,
+  },
+  emptyLeaderboardSubtitle: {
+    fontSize: 16,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+    textAlign: 'center',
+  },
+  leaderboardHeader: {
+    marginBottom: 20,
+  },
+  leaderboardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+    marginBottom: 8,
+  },
+  leaderboardSubtitle: {
+    fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+  },
+  leaderboardList: {
+    gap: 8,
+  },
+  leaderboardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  leaderboardTop1: {
+    backgroundColor: '#FFF9E6',
+    borderColor: '#FFD700',
+  },
+  leaderboardTop2: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#C0C0C0',
+  },
+  leaderboardTop3: {
+    backgroundColor: '#FFF5E6',
+    borderColor: '#CD7F32',
+  },
+  leaderboardRank: {
+    width: 50,
+    alignItems: 'center',
+  },
+  leaderboardRankText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
+  },
+  leaderboardInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  leaderboardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+    marginBottom: 4,
+  },
+  leaderboardCount: {
+    fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+  },
+  // Settings modal styles
+  settingsContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  settingsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#007AFF',
   },
-  buyCreditsButton: {
-    backgroundColor: '#28a745',
-  },
-  testButtonText: {
-    color: '#fff',
-    fontSize: 12,
+  settingsTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
+    color: '#fff',
   },
-  proximityActiveButton: {
-    backgroundColor: '#34C759',
+  settingsCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  explorationActiveButton: {
-    backgroundColor: '#FF9500',
+  settingsCloseButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
+    color: '#fff',
+  },
+  settingsContent: {
+    flex: 1,
+    padding: 20,
+  },
+  settingsOption: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  settingsOptionText: {
+    fontSize: 18,
+    fontWeight: '500',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingDescription: {
+    fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+    marginTop: 4,
   },
   centerButton: {
     position: 'absolute',
@@ -1156,7 +1631,7 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     position: 'absolute',
-    top: 60,
+    bottom: 30,
     left: 10,
     right: 10,
     zIndex: 1001,
@@ -1170,6 +1645,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingHorizontal: 16,
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -1182,10 +1658,10 @@ const styles = StyleSheet.create({
   },
   searchResultsContainer: {
     position: 'absolute',
-    top: 110,
+    bottom: 84,
     left: 10,
     right: 10,
-    maxHeight: 300,
+    maxHeight: 400,
     backgroundColor: '#fff',
     borderRadius: 12,
     shadowColor: '#000',
@@ -1196,21 +1672,57 @@ const styles = StyleSheet.create({
     zIndex: 1002,
   },
   searchResultsList: {
-    maxHeight: 300,
+    maxHeight: 400,
   },
   searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  searchResultContent: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  searchResultTextContainer: {
+    flex: 1,
+  },
   searchResultName: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 4,
   },
   searchResultAddress: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
+    marginBottom: 4,
+  },
+  searchResultRatings: {
+    fontSize: 12,
+    color: '#007AFF',
+    fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
+  },
+  searchResultNew: {
+    fontSize: 12,
+    color: '#22C55E',
+    fontWeight: '500',
+    fontFamily: GlobalFonts.regular,
+  },
+  searchResultButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  searchResultButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
 });

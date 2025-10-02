@@ -61,12 +61,9 @@ out skel qt;
     });
 
     if (!response.ok) {
-      // Silently handle rate limits (429) - fallback to database will handle it
-      if (response.status === 429) {
-        console.log('⏳ Overpass API rate limit reached, using cached data');
-        return [];
-      }
-      throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
+      // Silently handle all HTTP errors - fallback to database will handle it
+      console.log(`⏳ Overpass API unavailable (${response.status}), using cached data`);
+      return [];
     }
 
     const data: OSMResponse = await response.json();
@@ -74,11 +71,8 @@ out skel qt;
 
     return data.elements || [];
   } catch (error) {
-    // Only log actual errors, not rate limits
-    if (error instanceof Error && !error.message.includes('429')) {
-      console.error('❌ Error fetching OSM data:', error);
-    }
-    throw error;
+    // Silently handle all errors - fallback to database
+    return [];
   }
 }
 

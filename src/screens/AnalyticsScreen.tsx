@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../lib/supabase';
 import { RootStackParamList } from '../navigation';
+import { GlobalFonts } from '../styles/global';
 
 const { width } = Dimensions.get('window');
 
@@ -39,8 +40,8 @@ interface AnalyticsData {
     property_address: string;
   }>;
   ratingsByAttribute: {
-    noise: number;
     safety: number;
+    quietness: number;
     cleanliness: number;
   };
   hourlyDistribution: Array<{
@@ -146,8 +147,8 @@ export const AnalyticsScreen: React.FC = () => {
       if (attributeError) throw attributeError;
 
       const ratingsByAttribute = {
-        noise: attributeData.filter(r => r.attribute === 'noise').length,
         safety: attributeData.filter(r => r.attribute === 'safety').length,
+        quietness: attributeData.filter(r => r.attribute === 'quietness').length,
         cleanliness: attributeData.filter(r => r.attribute === 'cleanliness').length,
       };
 
@@ -247,22 +248,6 @@ export const AnalyticsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>📈 Ratings by Category</Text>
         <View style={styles.attributeContainer}>
           <View style={styles.attributeBar}>
-            <Text style={styles.attributeLabel}>🔊 Noise</Text>
-            <View style={styles.attributeBarContainer}>
-              <View 
-                style={[
-                  styles.attributeBarFill, 
-                  { 
-                    width: `${(analytics.ratingsByAttribute.noise / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#FF6B6B'
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.noise}</Text>
-          </View>
-          
-          <View style={styles.attributeBar}>
             <Text style={styles.attributeLabel}>🛡️ Safety</Text>
             <View style={styles.attributeBarContainer}>
               <View 
@@ -276,6 +261,22 @@ export const AnalyticsScreen: React.FC = () => {
               />
             </View>
             <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.safety}</Text>
+          </View>
+          
+          <View style={styles.attributeBar}>
+            <Text style={styles.attributeLabel}>🔇 Quietness</Text>
+            <View style={styles.attributeBarContainer}>
+              <View 
+                style={[
+                  styles.attributeBarFill, 
+                  { 
+                    width: `${(analytics.ratingsByAttribute.quietness / analytics.totalRatings) * 100}%`,
+                    backgroundColor: '#FF6B6B'
+                  }
+                ]} 
+              />
+            </View>
+            <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.quietness}</Text>
           </View>
           
           <View style={styles.attributeBar}>
@@ -351,6 +352,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginBottom: 20,
   },
@@ -364,6 +366,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
   header: {
     padding: 20,
@@ -374,10 +377,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
   },
   subtitle: {
     fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginTop: 4,
   },
@@ -401,10 +406,12 @@ const styles = StyleSheet.create({
   summaryNumber: {
     fontSize: 24,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#007AFF',
   },
   summaryLabel: {
     fontSize: 12,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginTop: 4,
     textAlign: 'center',
@@ -424,6 +431,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 15,
   },
@@ -438,6 +446,7 @@ const styles = StyleSheet.create({
   attributeLabel: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     width: 80,
   },
   attributeBarContainer: {
@@ -453,6 +462,7 @@ const styles = StyleSheet.create({
   attributeCount: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#666',
     width: 30,
     textAlign: 'right',
@@ -472,28 +482,34 @@ const styles = StyleSheet.create({
   activityAttribute: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     textTransform: 'capitalize',
   },
   activityStars: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
   },
   activityProperty: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 2,
   },
   activityAddress: {
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     marginBottom: 5,
   },
   activityTime: {
     fontSize: 12,
+    fontFamily: GlobalFonts.regular,
     color: '#999',
   },
   noDataText: {
     textAlign: 'center',
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     fontStyle: 'italic',
     padding: 20,

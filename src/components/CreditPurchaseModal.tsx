@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   ScrollView,
   Alert,
   ActivityIndicator,
   Linking,
+  StatusBar,
 } from 'react-native';
 import { CREDIT_PACKAGES, createCreditCheckout, CreditPackage } from '../services/creditPurchase';
 import { syncPendingCredits } from '../services/creditSync';
@@ -141,17 +141,20 @@ export const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
     </TouchableOpacity>
   );
 
+  console.log('CreditPurchaseModal render - visible:', visible);
+  
+  if (!visible) return null;
+  
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
+    <View style={styles.overlay}>
+      <StatusBar barStyle="light-content" backgroundColor="#007AFF" />
+      <View style={styles.fullScreenContainer}>
         <View style={styles.header}>
-          <Text style={styles.title}>Buy Credits</Text>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <Text style={styles.title}>💳 Buy Credits</Text>
+          <TouchableOpacity style={styles.closeButton} onPress={() => {
+            console.log('Close button pressed!');
+            onClose();
+          }}>
             <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
         </View>
@@ -179,12 +182,21 @@ export const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
           </View>
         </ScrollView>
       </View>
-    </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  fullScreenContainer: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
@@ -193,8 +205,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#007AFF',
     paddingTop: 60,
+    backgroundColor: '#007AFF',
   },
   title: {
     fontSize: 24,

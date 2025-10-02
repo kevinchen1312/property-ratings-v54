@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { GlobalFonts } from '../styles/global';
 
 interface StarRatingProps {
   label: string;
@@ -73,6 +74,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 8,
     textTransform: 'capitalize',
@@ -98,6 +100,7 @@ const styles = StyleSheet.create({
   ratingText: {
     marginLeft: 8,
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
     fontWeight: '500',
   },

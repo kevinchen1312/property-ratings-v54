@@ -56,7 +56,7 @@ export const ReportPreviewScreen: React.FC<ReportPreviewScreenProps> = ({ route 
 
   const formatAttribute = (attr: string) => {
     switch (attr) {
-      case 'noise': return 'Noise Level';
+      case 'quietness': return 'Quietness';
       case 'safety': return 'Safety';
       case 'cleanliness': return 'Cleanliness';
       default: return attr;

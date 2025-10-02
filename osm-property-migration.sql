@@ -82,3 +82,4 @@ COMMENT ON COLUMN property.osm_id IS 'OpenStreetMap identifier (e.g., "node/1234
 -- Grant execute permissions on functions
 GRANT EXECUTE ON FUNCTION upsert_osm_property TO authenticated;
 GRANT EXECUTE ON FUNCTION delete_properties_within_radius TO authenticated;
+

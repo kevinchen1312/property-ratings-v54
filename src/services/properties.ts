@@ -156,17 +156,149 @@ export const getPropertiesWithinRadius = async (
  * @returns Promise<Property[]>
  */
 export const searchProperties = async (searchTerm: string): Promise<Property[]> => {
+  const normalizedTerm = searchTerm.trim().toLowerCase();
+  
+  // Search in database - use the full search term
   const { data, error } = await supabase
     .from('property')
-    .select('id, name, address, lat, lng, created_at')
-    .or(`name.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%`)
-    .order('address');
+    .select(`
+      id, name, address, lat, lng, created_at,
+      rating(id)
+    `)
+    .or(`name.ilike.%${normalizedTerm}%,address.ilike.%${normalizedTerm}%`)
+    .order('address')
+    .limit(20);
 
   if (error) {
     throw new Error(`Failed to search properties: ${error.message}`);
   }
 
-  return data || [];
+  // Format results with rating count
+  let dbResults = (data || []).map((prop: any) => {
+    // Count actual ratings (filter out null entries)
+    const ratings = prop.rating || [];
+    const count = ratings.filter((r: any) => r && r.id).length;
+    
+    // Remove rating data and add count
+    const { rating, ...propertyData } = prop;
+    
+    return {
+      ...propertyData,
+      rating_count: count
+    };
+  });
+  
+  // If we have database results, return them
+  if (dbResults.length > 0) {
+    return dbResults;
+  }
+  
+  // If no exact phrase match, try matching ALL individual words
+  const words = normalizedTerm.split(/\s+/).filter(w => w.length > 1);
+  
+  if (words.length > 1) {
+    // Get properties
+    const { data: allData } = await supabase
+      .from('property')
+      .select(`
+        id, name, address, lat, lng, created_at,
+        rating(id)
+      `)
+      .limit(100);
+    
+    if (allData) {
+      // Filter client-side for properties that contain ALL words
+      dbResults = allData
+        .filter((prop: any) => {
+          const searchableText = `${prop.name} ${prop.address}`.toLowerCase();
+          return words.every(word => searchableText.includes(word));
+        })
+        .map((prop: any) => {
+          // Count actual ratings (filter out null entries)
+          const ratings = prop.rating || [];
+          const count = ratings.filter((r: any) => r && r.id).length;
+          
+          // Remove rating data and add count
+          const { rating, ...propertyData } = prop;
+          
+          // Calculate match score (how many words matched)
+          const searchableText = `${prop.name} ${prop.address}`.toLowerCase();
+          const matchScore = words.filter(word => searchableText.includes(word)).length;
+          
+          return {
+            ...propertyData,
+            rating_count: count,
+            _matchScore: matchScore
+          };
+        })
+        .sort((a: any, b: any) => b._matchScore - a._matchScore) // Sort by best match first
+        .map(({_matchScore, ...prop}) => prop) // Remove score field
+        .slice(0, 20);
+    }
+  }
+
+  // If we have database results from word matching, return them
+  if (dbResults.length > 0) {
+    return dbResults;
+  }
+
+  // Otherwise, search worldwide using Google Places API
+  try {
+    const GOOGLE_MAPS_API_KEY = 'AIzaSyBZr1V5laBcjeoGFE0iafU73k6ebD1hza8';
+    
+    const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?` +
+      `query=${encodeURIComponent(searchTerm)}&` +
+      `key=${GOOGLE_MAPS_API_KEY}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(placesUrl, {
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const placesResults = await response.json();
+    
+    if (!placesResults.results || !Array.isArray(placesResults.results)) {
+      return [];
+    }
+    
+    // Convert Google Places results to Property format
+    const worldwideResults: Property[] = placesResults.results
+      .map((result: any) => {
+        const fullText = `${result.name} ${result.formatted_address}`.toLowerCase();
+        
+        // Calculate match score: how many search words are in this result?
+        const words = normalizedTerm.split(/\s+/).filter((w: string) => w.length > 1);
+        const matchScore = words.filter((word: string) => fullText.includes(word)).length;
+        
+        return {
+          id: `google-${result.place_id}`,
+          name: result.name,
+          address: result.formatted_address,
+          lat: result.geometry.location.lat,
+          lng: result.geometry.location.lng,
+          created_at: new Date().toISOString(),
+          rating_count: 0,
+          isNew: true,
+          _matchScore: matchScore
+        };
+      })
+      .sort((a: any, b: any) => b._matchScore - a._matchScore) // Best matches first
+      .map(({_matchScore, ...prop}) => prop) // Remove score field
+      .slice(0, 10);
+
+    return worldwideResults;
+  } catch (error) {
+    // If worldwide search fails, just return empty
+    return [];
+  }
 };
 
 /**
@@ -269,10 +401,10 @@ export const getPropertiesOSMBased = async (
     const existingProperties = await getPropertiesWithinRadius(latitude, longitude, radiusMeters);
     console.log(`📍 Found ${existingProperties.length} existing properties in database`);
 
-    // Step 2: Fetch OSM data for the same area
-    const { getOSMPropertiesNearLocation } = await import('./osm');
-    const osmProperties = await getOSMPropertiesNearLocation(latitude, longitude, radiusMeters);
-    console.log(`🌐 Found ${osmProperties.length} properties from OSM`);
+    // Step 2: Fetch Google Places data for the same area
+    const { fetchNearbyPlaces } = await import('./googlePlaces');
+    const googlePlaces = await fetchNearbyPlaces(latitude, longitude, radiusMeters);
+    console.log(`🗺️ Found ${googlePlaces.length} properties from Google Places`);
 
     // Step 3: Find new properties (not in database)
     const existingOSMIds = new Set(
@@ -286,27 +418,27 @@ export const getPropertiesOSMBased = async (
       existingProperties.map(p => p.address.toLowerCase().trim())
     );
 
-    const newOSMProperties = osmProperties.filter(
-      osmProp => {
-        if (!osmProp.osm_id) return false;
-        // Skip if OSM ID already exists
-        if (existingOSMIds.has(osmProp.osm_id)) return false;
+    const newGoogleProperties = googlePlaces.filter(
+      googleProp => {
+        if (!googleProp.osm_id) return false;
+        // Skip if ID already exists
+        if (existingOSMIds.has(googleProp.osm_id)) return false;
         // Skip if address already exists (prevent duplicates)
-        if (osmProp.address && existingAddresses.has(osmProp.address.toLowerCase().trim())) {
-          console.log(`⚠️ Skipping duplicate address: ${osmProp.address}`);
+        if (googleProp.address && existingAddresses.has(googleProp.address.toLowerCase().trim())) {
+          console.log(`⚠️ Skipping duplicate address: ${googleProp.address}`);
           return false;
         }
         return true;
       }
     ) as Array<Partial<Property> & { osm_id: string }>;
 
-    console.log(`🆕 Found ${newOSMProperties.length} new properties to save`);
+    console.log(`🆕 Found ${newGoogleProperties.length} new properties to save`);
 
     // Step 4: Save new properties to database (with error handling)
     let savedProperties: Property[] = [];
-    if (newOSMProperties.length > 0) {
+    if (newGoogleProperties.length > 0) {
       try {
-        savedProperties = await upsertOSMProperties(newOSMProperties);
+        savedProperties = await upsertOSMProperties(newGoogleProperties);
         console.log(`💾 Saved ${savedProperties.length} new properties to database`);
       } catch (error) {
         console.warn(`⚠️ Some properties failed to save, continuing with existing data`, error);
@@ -319,7 +451,7 @@ export const getPropertiesOSMBased = async (
     
     return allProperties;
   } catch (error) {
-    // Silently fallback to database-only if OSM fails
+    // Silently fallback to database-only if Google Places fails
     try {
       return await getPropertiesWithinRadius(latitude, longitude, radiusMeters);
     } catch (fallbackError) {

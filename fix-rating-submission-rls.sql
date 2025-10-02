@@ -22,3 +22,4 @@ ORDER BY tablename;
 
 -- Add comment
 COMMENT ON TABLE property_contributors IS 'RLS disabled to fix rating submission permission error - updated 2025-09-30';
+
