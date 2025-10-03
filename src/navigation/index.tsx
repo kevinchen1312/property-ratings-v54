@@ -6,6 +6,7 @@ import { MapScreen } from '../screens/MapScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
 import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
+import { PurchaseSuccessScreen } from '../screens/PurchaseSuccessScreen';
 import { getInitialSession, onAuthStateChange } from '../lib/auth';
 import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
@@ -18,6 +19,9 @@ export type RootStackParamList = {
   ReportPreview: {
     propertyId: string;
     propertyName?: string;
+  };
+  PurchaseSuccess: {
+    session_id?: string;
   };
 };
 
@@ -87,6 +91,13 @@ export const RootNavigator: React.FC = () => {
                 fontWeight: 'bold',
                 fontFamily: GlobalFonts.bold,
               },
+            }}
+          />
+          <Stack.Screen
+            name="PurchaseSuccess"
+            component={PurchaseSuccessScreen}
+            options={{
+              headerShown: false,
             }}
           />
         </>

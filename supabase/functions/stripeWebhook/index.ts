@@ -151,6 +151,13 @@ serve(async (req) => {
       if (creditPurchase) {
         // Handle credit purchase
         console.log('Processing credit purchase:', creditPurchase.id);
+        console.log('Purchase status:', creditPurchase.status);
+        
+        // If already completed, return success (idempotency)
+        if (creditPurchase.status === 'completed') {
+          console.log('Purchase already completed, returning success');
+          return new Response('Credit purchase already completed', { status: 200 });
+        }
         
         const { data: result, error: creditError } = await supabase.rpc('complete_credit_purchase', {
           p_stripe_session_id: session.id
@@ -158,7 +165,18 @@ serve(async (req) => {
 
         if (creditError || !result) {
           console.error('Failed to complete credit purchase:', creditError);
-          return new Response('Failed to process credit purchase', { status: 500 });
+          console.error('RPC result:', result);
+          
+          // Return 200 anyway to prevent Stripe from retrying
+          // We'll investigate the failure separately
+          return new Response(JSON.stringify({ 
+            error: 'Failed to process credit purchase',
+            details: creditError?.message || 'RPC returned false',
+            session_id: session.id
+          }), { 
+            status: 200, // Return 200 to acknowledge receipt
+            headers: { 'Content-Type': 'application/json' }
+          });
         }
 
         console.log(`Successfully added ${creditPurchase.credits} credits to user ${creditPurchase.user_id}`);

@@ -9,7 +9,8 @@ import { RootNavigator } from './src/navigation';
 
 const linking = {
   prefixes: [
-    'property-ratings://', // Deep link scheme
+    'leadsong://', // Deep link scheme (updated for credit purchase)
+    'property-ratings://', // Legacy deep link scheme
     'exp://192.168.12.238:8088', // Expo Go development
     'exp://localhost:8088', // Local development
   ],
@@ -21,6 +22,7 @@ const linking = {
       ReportPreview: 'report/:propertyId',
       Earnings: 'earnings',
       Analytics: 'analytics',
+      PurchaseSuccess: 'purchase/success', // Handle credit purchase return
     },
   },
 };

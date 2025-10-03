@@ -102,8 +102,11 @@ export async function getUserCredits(): Promise<number> {
   try {
     const { data: session } = await supabase.auth.getSession();
     if (!session.session?.user) {
+      console.log('❌ No user session found');
       return 0;
     }
+
+    console.log('👤 Fetching credits for user:', session.session.user.id);
 
     const { data, error } = await supabase
       .from('user_credits')
@@ -112,13 +115,14 @@ export async function getUserCredits(): Promise<number> {
       .single();
 
     if (error) {
-      console.error('Error fetching user credits:', error);
+      console.error('❌ Error fetching user credits:', error);
       return 0;
     }
 
+    console.log('✅ Credits from database:', data?.credits || 0);
     return data?.credits || 0;
   } catch (error) {
-    console.error('Error in getUserCredits:', error);
+    console.error('❌ Error in getUserCredits:', error);
     return 0;
   }
 }

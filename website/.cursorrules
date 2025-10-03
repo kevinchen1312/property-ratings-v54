@@ -1,0 +1,45 @@
+# Cursor Rules for Leadsong Credits Website
+
+## Project Context
+This is a Next.js 14 App Router website for purchasing credits via Stripe Checkout.
+Users come from a mobile app (Expo/React Native), make purchases on web, then return to app via deep links.
+
+## Tech Stack
+- Next.js 14 (App Router)
+- TypeScript
+- Stripe (Checkout + Webhooks)
+- Supabase (Auth + Database)
+- CSS Modules
+
+## Key Principles
+1. **Server-first**: Use Server Components by default
+2. **Security**: Never expose service role key to client
+3. **Idempotency**: All credit operations must be idempotent (webhook retries)
+4. **Auth**: Always validate user session server-side
+5. **Webhooks as source of truth**: Never trust client for credit increments
+
+## Coding Standards
+- Use async/await for all async operations
+- Use descriptive variable names
+- Add TypeScript types for all function parameters
+- Include error handling and logging in API routes
+- Use NextResponse for API routes
+- Validate all user inputs
+
+## File Organization
+- API routes in `app/api/`
+- Pages in `app/[route]/page.tsx`
+- Shared utilities in `lib/`
+- Components in `components/`
+- CSS modules colocated with components
+
+## Environment Variables
+- Public vars: `NEXT_PUBLIC_*`
+- Server-only vars: No prefix
+- Always check for required vars at startup
+
+## Testing
+- Test webhook idempotency
+- Test with Stripe test cards
+- Verify credits are added correctly
+- Check deep link redirects work

@@ -13,6 +13,7 @@ import {
 import { CREDIT_PACKAGES, CreditPackage } from '../services/creditPurchase';
 import { getUserCredits } from '../services/reportsApi';
 import { GlobalFonts } from '../styles/global';
+import { supabase } from '../lib/supabase';
 
 interface BuyCreditsScreenProps {
   visible: boolean;
@@ -27,11 +28,34 @@ export const BuyCreditsScreen: React.FC<BuyCreditsScreenProps> = ({ visible, onC
   useEffect(() => {
     if (visible) {
       loadCredits();
+      
+      // Auto-refresh credits every 1 second for 10 seconds after screen opens
+      // This catches credits added by webhook after purchase
+      let refreshCount = 0;
+      const maxRefreshes = 10; // 10 refreshes × 1 second = 10 seconds
+      
+      const intervalId = setInterval(() => {
+        refreshCount++;
+        console.log(`Auto-refreshing credits (${refreshCount}/${maxRefreshes})...`);
+        loadCredits();
+        
+        if (refreshCount >= maxRefreshes) {
+          clearInterval(intervalId);
+          console.log('Auto-refresh stopped');
+        }
+      }, 1000); // Every 1 second
+      
+      // Cleanup interval when screen closes
+      return () => {
+        clearInterval(intervalId);
+      };
     }
   }, [visible]);
 
   const loadCredits = async () => {
+    console.log('🔄 Refreshing credits...');
     const credits = await getUserCredits();
+    console.log('💰 Credits fetched:', credits);
     setCurrentCredits(credits);
   };
 
@@ -40,14 +64,22 @@ export const BuyCreditsScreen: React.FC<BuyCreditsScreenProps> = ({ visible, onC
     setSelectedPackage(packageId);
 
     try {
-      // Open leadsong.com
-      const url = 'https://leadsong.com';
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        Alert.alert('Error', 'Please sign in first');
+        return;
+      }
+
+      // Open credit purchase website with auth token
+      const url = `https://leadongs-credits.vercel.app/credits?access_token=${session.access_token}`;
       const supported = await Linking.canOpenURL(url);
       
       if (supported) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Error', 'Cannot open leadsong.com');
+        Alert.alert('Error', 'Cannot open credit purchase page');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to open website');
