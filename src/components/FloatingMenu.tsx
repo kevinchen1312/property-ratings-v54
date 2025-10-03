@@ -10,6 +10,7 @@ interface FloatingMenuProps {
   onEarnings: () => void;
   onAnalytics: () => void;
   onSettings: () => void;
+  onRewards: () => void;
   onMenuVisibilityChange?: (visible: boolean) => void;
   isScreenFocused?: boolean;
 }
@@ -20,6 +21,7 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
   onEarnings,
   onAnalytics,
   onSettings,
+  onRewards,
   onMenuVisibilityChange,
   isScreenFocused = true,
 }) => {
@@ -94,36 +96,45 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
               },
             ]}
           >
-            {/* Buy Credits - Top Left */}
+            {/* Buy Credits */}
             <TouchableOpacity
-              style={[styles.buttonInBox, styles.buyCreditsButton, { top: 16, left: 16 }]}
+              style={[styles.verticalButton, styles.buyCreditsButton]}
               onPress={() => handleMenuAction(onBuyCredits)}
               activeOpacity={0.8}
             >
-              <Text style={styles.menuItemText}>Buy{'\n'}Credits</Text>
+              <Text style={styles.menuItemText}>Buy Credits</Text>
             </TouchableOpacity>
 
-            {/* Earnings - Top Right */}
+            {/* Earnings */}
             <TouchableOpacity
-              style={[styles.buttonInBox, styles.earningsButton, { top: 16, right: 16 }]}
+              style={[styles.verticalButton, styles.earningsButton]}
               onPress={() => handleMenuAction(onEarnings)}
               activeOpacity={0.8}
             >
               <Text style={styles.menuItemText}>Earnings</Text>
             </TouchableOpacity>
 
-            {/* Analytics - Bottom Left */}
+            {/* Analytics */}
             <TouchableOpacity
-              style={[styles.buttonInBox, styles.analyticsButton, { bottom: 16, left: 16 }]}
+              style={[styles.verticalButton, styles.analyticsButton]}
               onPress={() => handleMenuAction(onAnalytics)}
               activeOpacity={0.8}
             >
               <Text style={styles.menuItemText}>Analytics</Text>
             </TouchableOpacity>
 
-            {/* Settings - Bottom Right */}
+            {/* Rewards */}
             <TouchableOpacity
-              style={[styles.buttonInBox, styles.settingsButton, { bottom: 16, right: 16 }]}
+              style={[styles.verticalButton, styles.rewardsButton]}
+              onPress={() => handleMenuAction(onRewards)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.menuItemText}>Rewards</Text>
+            </TouchableOpacity>
+
+            {/* Settings */}
+            <TouchableOpacity
+              style={[styles.verticalButton, styles.settingsButton]}
               onPress={() => handleMenuAction(onSettings)}
               activeOpacity={0.8}
             >
@@ -187,7 +198,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 180,
     width: 340,
-    height: 240,
+    height: 380,
     backgroundColor: '#fff',
     borderRadius: 24,
     shadowColor: '#000',
@@ -195,40 +206,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 10,
-  },
-  menuGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    padding: 16,
     justifyContent: 'space-between',
-    position: 'relative',
   },
-  menuItem: {
-    width: '47%',
-    aspectRatio: 1.3,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  menuItemBottom: {
-    marginBottom: 0,
-  },
-  greenDivider: {
-    height: 2,
-    backgroundColor: '#00ff00',
-    marginTop: 8,
-    marginLeft: -12,
-    marginRight: -12,
-  },
-  buttonInBox: {
-    position: 'absolute',
-    width: 150,
-    height: 100,
+  verticalButton: {
+    width: '100%',
+    height: 64,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -245,6 +228,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   analyticsButton: {
+    backgroundColor: '#7C3AED',
+  },
+  rewardsButton: {
     backgroundColor: '#000000',
   },
   settingsButton: {

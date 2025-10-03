@@ -8,33 +8,27 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Modal,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation';
-import { CREDIT_PACKAGES, createCreditCheckout, CreditPackage } from '../services/creditPurchase';
-import { syncPendingCredits } from '../services/creditSync';
+import { CREDIT_PACKAGES, CreditPackage } from '../services/creditPurchase';
 import { getUserCredits } from '../services/reportsApi';
 import { GlobalFonts } from '../styles/global';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'BuyCredits'>;
+interface BuyCreditsScreenProps {
+  visible: boolean;
+  onClose: () => void;
+}
 
-export const BuyCreditsScreen: React.FC = () => {
-  const navigation = useNavigation<NavigationProp>();
+export const BuyCreditsScreen: React.FC<BuyCreditsScreenProps> = ({ visible, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [currentCredits, setCurrentCredits] = useState(0);
 
-  // Refresh credits when screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
-      loadCredits();
-    }, [])
-  );
-
   useEffect(() => {
-    loadCredits();
-  }, []);
+    if (visible) {
+      loadCredits();
+    }
+  }, [visible]);
 
   const loadCredits = async () => {
     const credits = await getUserCredits();
@@ -46,36 +40,17 @@ export const BuyCreditsScreen: React.FC = () => {
     setSelectedPackage(packageId);
 
     try {
-      const result = await createCreditCheckout(packageId);
+      // Open leadsong.com
+      const url = 'https://leadsong.com';
+      const supported = await Linking.canOpenURL(url);
       
-      if (result.success && result.checkout_url) {
-        // Open Stripe checkout in browser
-        const supported = await Linking.canOpenURL(result.checkout_url);
-        
-        if (supported) {
-          await Linking.openURL(result.checkout_url);
-          
-          // Show success message
-          Alert.alert(
-            'Complete Your Purchase',
-            'You will be taken to Stripe to complete payment. After paying, you can close the browser and return to the app. Credits will appear automatically.',
-            [
-              {
-                text: 'Got It',
-                onPress: () => {
-                  // Stay on this screen so they can see updated credits when they return
-                }
-              }
-            ]
-          );
-        } else {
-          Alert.alert('Error', 'Cannot open checkout URL');
-        }
+      if (supported) {
+        await Linking.openURL(url);
       } else {
-        Alert.alert('Error', result.message || 'Failed to create checkout session');
+        Alert.alert('Error', 'Cannot open leadsong.com');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to initiate purchase');
+      Alert.alert('Error', error.message || 'Failed to open website');
     } finally {
       setLoading(false);
       setSelectedPackage(null);
@@ -98,10 +73,12 @@ export const BuyCreditsScreen: React.FC = () => {
         </View>
       )}
       
-      <Text style={styles.packageCredits}>{pkg.credits} Credits</Text>
+      <Text style={styles.packageCredits}>
+        {pkg.credits} {pkg.credits === 1 ? 'credit' : 'credits'}
+      </Text>
       <Text style={styles.packagePrice}>${pkg.price}</Text>
       <Text style={styles.packagePricePerCredit}>
-        ${(pkg.price / pkg.credits).toFixed(2)} per credit
+        ${(pkg.price / pkg.credits).toFixed(2)}/ea
       </Text>
       
       {loading && selectedPackage === pkg.id && (
@@ -111,44 +88,100 @@ export const BuyCreditsScreen: React.FC = () => {
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.currentCreditsContainer}>
-        <Text style={styles.currentCreditsText}>
-          Current Balance: {currentCredits} credits
-        </Text>
-      </View>
-
-      <ScrollView style={styles.packagesContainer} showsVerticalScrollIndicator={false}>
-        <Text style={styles.subtitle}>Choose a credit package:</Text>
-        
-        {CREDIT_PACKAGES.map(renderPackage)}
-        
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>💡 How it works:</Text>
-          <Text style={styles.infoText}>
-            • Each property report costs 1 credit (normally $10){'\n'}
-            • Buy in bulk to save money{'\n'}
-            • Credits never expire{'\n'}
-            • Secure payment via Stripe{'\n'}
-            • After paying, close the browser and return here{'\n'}
-            • Credits appear automatically within seconds
-          </Text>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Buy Credits</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.currentCreditsContainer}>
+            <Text style={styles.currentCreditsText}>
+              Current Balance: {currentCredits} credits
+            </Text>
+          </View>
+
+          <View style={styles.packagesContainer}>
+            <Text style={styles.subtitle}>Choose a credit package:</Text>
+            
+            <View style={styles.packagesGrid}>
+              {CREDIT_PACKAGES.map(renderPackage)}
+              <View style={[styles.infoContainer, { width: '100%', margin: 0, marginTop: 8 }]}>
+                <Text style={styles.infoTitle}>Credit system explained</Text>
+                <Text style={styles.infoText}>
+                  • Each property report costs 1 credit{'\n'}
+                  • Credits never expire{'\n'}
+                  • Secure payment via Stripe on leadsong.com{'\n'}
+                  • After paying, close the browser and return here{'\n'}
+                  • Credits appear automatically within seconds
+                </Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+    backgroundColor: '#7C3AED',
+    borderBottomWidth: 1,
+    borderBottomColor: '#6B2FD1',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    fontFamily: GlobalFonts.bold,
+    color: '#fff',
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  scrollContent: {
+    flex: 1,
   },
   currentCreditsContainer: {
     padding: 20,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    marginTop: 20,
+    marginHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   currentCreditsText: {
     fontSize: 16,
@@ -158,7 +191,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   packagesContainer: {
-    flex: 1,
     padding: 20,
   },
   subtitle: {
@@ -168,14 +200,26 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 20,
   },
+  packagesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'flex-start',
+    marginBottom: 0,
+    padding: 0,
+    gap: 0,
+  },
   packageCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    padding: 12,
+    width: '48%',
+    aspectRatio: 1,
+    marginBottom: 8,
     borderWidth: 2,
     borderColor: '#e0e0e0',
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -191,35 +235,35 @@ const styles = StyleSheet.create({
   },
   savingsBadge: {
     position: 'absolute',
-    top: -10,
-    right: 10,
+    top: -8,
+    right: 8,
     backgroundColor: '#7C3AED',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   savingsText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
   },
   packageCredits: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
     color: '#333',
     marginBottom: 8,
   },
   packagePrice: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
     color: '#7C3AED',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   packagePricePerCredit: {
-    fontSize: 14,
+    fontSize: 11,
     fontFamily: GlobalFonts.regular,
     color: '#666',
   },
@@ -230,7 +274,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
-    marginTop: 20,
+    marginTop: 0,
     marginBottom: 40,
   },
   infoTitle: {
@@ -247,4 +291,3 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
-

@@ -5,9 +5,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapScreen } from '../screens/MapScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
-import { EarningsScreen } from '../screens/EarningsScreen';
-import { AnalyticsScreen } from '../screens/AnalyticsScreen';
-import { BuyCreditsScreen } from '../screens/BuyCreditsScreen';
 import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
 import { getInitialSession, onAuthStateChange } from '../lib/auth';
 import { Session } from '../lib/types';
@@ -22,9 +19,6 @@ export type RootStackParamList = {
     propertyId: string;
     propertyName?: string;
   };
-  Earnings: undefined;
-  Analytics: undefined;
-  BuyCredits: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -87,54 +81,6 @@ export const RootNavigator: React.FC = () => {
               title: 'Property Report',
               headerStyle: {
                 backgroundColor: '#007AFF',
-              },
-              headerTintColor: '#fff',
-              headerTitleStyle: {
-                fontWeight: 'bold',
-                fontFamily: GlobalFonts.bold,
-              },
-            }}
-          />
-          <Stack.Screen
-            name="Earnings"
-            component={EarningsScreen}
-            options={{
-              title: 'My Earnings',
-              headerBackTitle: 'Menu',
-              headerStyle: {
-                backgroundColor: '#7C3AED',
-              },
-              headerTintColor: '#fff',
-              headerTitleStyle: {
-                fontWeight: 'bold',
-                fontFamily: GlobalFonts.bold,
-              },
-            }}
-          />
-          <Stack.Screen
-            name="Analytics"
-            component={AnalyticsScreen}
-            options={{
-              title: 'Rating Analytics',
-              headerBackTitle: 'Menu',
-              headerStyle: {
-                backgroundColor: '#7C3AED',
-              },
-              headerTintColor: '#fff',
-              headerTitleStyle: {
-                fontWeight: 'bold',
-                fontFamily: GlobalFonts.bold,
-              },
-            }}
-          />
-          <Stack.Screen
-            name="BuyCredits"
-            component={BuyCreditsScreen}
-            options={{
-              title: 'Buy Credits',
-              headerBackTitle: 'Menu',
-              headerStyle: {
-                backgroundColor: '#7C3AED',
               },
               headerTintColor: '#fff',
               headerTitleStyle: {

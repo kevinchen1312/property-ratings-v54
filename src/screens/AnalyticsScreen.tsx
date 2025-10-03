@@ -6,55 +6,40 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  RefreshControl,
-  Dimensions,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../lib/supabase';
-import { RootStackParamList } from '../navigation';
 import { GlobalFonts } from '../styles/global';
 
-const { width } = Dimensions.get('window');
-
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Analytics'>;
-
-interface AnalyticsData {
-  totalRatings: number;
-  ratingsToday: number;
-  ratingsThisWeek: number;
-  ratingsThisMonth: number;
-  averageStars: number;
-  topRatedProperties: Array<{
-    property_name: string;
-    property_address: string;
-    avg_stars: number;
-    rating_count: number;
-  }>;
-  recentActivity: Array<{
-    id: string;
-    created_at: string;
-    attribute: string;
-    stars: number;
-    property_name: string;
-    property_address: string;
-  }>;
-  ratingsByAttribute: {
-    safety: number;
-    quietness: number;
-    cleanliness: number;
-  };
-  hourlyDistribution: Array<{
-    hour: number;
-    count: number;
-  }>;
+interface AnalyticsScreenProps {
+  visible: boolean;
+  onClose: () => void;
 }
 
-export const AnalyticsScreen: React.FC = () => {
-  const navigation = useNavigation<NavigationProp>();
+interface LeadsongActivity {
+  id: string;
+  created_at: string;
+  property_name: string;
+  property_address: string;
+  property_id: string;
+  leadsong_time: string;
+}
+
+interface AnalyticsData {
+  totalLeadsongs: number;
+  leadsongsToday: number;
+  leadsongsThisWeek: number;
+  averageStars: number;
+  recentActivity: LeadsongActivity[];
+}
+
+export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClose }) => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(10);
+  const [hasMore, setHasMore] = useState(true);
 
   const fetchAnalytics = async () => {
     try {
@@ -66,112 +51,81 @@ export const AnalyticsScreen: React.FC = () => {
 
       console.log('📊 Fetching analytics for user:', user.id);
 
-      // Get total ratings
-      const { data: totalData, error: totalError } = await supabase
-        .from('rating')
-        .select('id')
-        .eq('user_id', user.id);
-
-      if (totalError) throw totalError;
-
-      // Get ratings today
-      const today = new Date().toISOString().split('T')[0];
-      const { data: todayData, error: todayError } = await supabase
-        .from('rating')
-        .select('id')
-        .eq('user_id', user.id)
-        .gte('created_at', `${today}T00:00:00.000Z`)
-        .lt('created_at', `${today}T23:59:59.999Z`);
-
-      if (todayError) throw todayError;
-
-      // Get ratings this week
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      const { data: weekData, error: weekError } = await supabase
-        .from('rating')
-        .select('id')
-        .eq('user_id', user.id)
-        .gte('created_at', weekAgo.toISOString());
-
-      if (weekError) throw weekError;
-
-      // Get ratings this month
-      const monthAgo = new Date();
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      const { data: monthData, error: monthError } = await supabase
-        .from('rating')
-        .select('id')
-        .eq('user_id', user.id)
-        .gte('created_at', monthAgo.toISOString());
-
-      if (monthError) throw monthError;
-
-      // Get average stars
-      const { data: avgData, error: avgError } = await supabase
-        .from('rating')
-        .select('stars')
-        .eq('user_id', user.id);
-
-      if (avgError) throw avgError;
-
-      const averageStars = avgData.length > 0 
-        ? avgData.reduce((sum, r) => sum + r.stars, 0) / avgData.length 
-        : 0;
-
-      // Get recent activity
-      const { data: recentData, error: recentError } = await supabase
+      // Get all ratings to group by submissions
+      const { data: allRatings, error: ratingsError } = await supabase
         .from('rating')
         .select(`
           id,
           created_at,
-          attribute,
           stars,
+          property_id,
           property:property_id (
             name,
             address
           )
         `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
-      if (recentError) throw recentError;
+      if (ratingsError) throw ratingsError;
 
-      // Get ratings by attribute
-      const { data: attributeData, error: attributeError } = await supabase
-        .from('rating')
-        .select('attribute')
-        .eq('user_id', user.id);
+      // Group ratings by Leadsong (same property_id and created_at within 2 seconds)
+      const leadsongs = new Map<string, LeadsongActivity>();
+      const leadsongStars: number[] = [];
 
-      if (attributeError) throw attributeError;
+      if (allRatings) {
+        allRatings.forEach((rating: any) => {
+          const leadsongKey = `${rating.property_id}-${new Date(rating.created_at).toISOString().slice(0, -5)}`;
+          
+          const property = Array.isArray(rating.property) ? rating.property[0] : rating.property;
+          
+          if (!leadsongs.has(leadsongKey)) {
+            leadsongs.set(leadsongKey, {
+              id: rating.id,
+              created_at: rating.created_at,
+              property_name: property?.name || 'Unknown Property',
+              property_address: property?.address || 'Unknown Address',
+              property_id: rating.property_id,
+              leadsong_time: rating.created_at,
+            });
+          }
+          
+          leadsongStars.push(rating.stars);
+        });
+      }
 
-      const ratingsByAttribute = {
-        safety: attributeData.filter(r => r.attribute === 'safety').length,
-        quietness: attributeData.filter(r => r.attribute === 'quietness').length,
-        cleanliness: attributeData.filter(r => r.attribute === 'cleanliness').length,
-      };
+      const leadsongsArray = Array.from(leadsongs.values());
+      const totalLeadsongs = leadsongsArray.length;
+
+      // Calculate Leadsongs today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const leadsongsToday = leadsongsArray.filter(song => 
+        new Date(song.created_at) >= today
+      ).length;
+
+      // Calculate Leadsongs this week
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const leadsongsThisWeek = leadsongsArray.filter(song => 
+        new Date(song.created_at) >= weekAgo
+      ).length;
+
+      // Calculate average stars across all ratings
+      const averageStars = leadsongStars.length > 0
+        ? leadsongStars.reduce((sum, stars) => sum + stars, 0) / leadsongStars.length
+        : 0;
 
       const analyticsData: AnalyticsData = {
-        totalRatings: totalData.length,
-        ratingsToday: todayData.length,
-        ratingsThisWeek: weekData.length,
-        ratingsThisMonth: monthData.length,
-        averageStars: Math.round(averageStars * 10) / 10,
-        topRatedProperties: [], // We'll implement this later
-        recentActivity: recentData.map(r => ({
-          id: r.id,
-          created_at: r.created_at,
-          attribute: r.attribute,
-          stars: r.stars,
-          property_name: r.property?.name || 'Unknown Property',
-          property_address: r.property?.address || 'Unknown Address',
-        })),
-        ratingsByAttribute,
-        hourlyDistribution: [], // We'll implement this later
+        totalLeadsongs,
+        leadsongsToday,
+        leadsongsThisWeek,
+        averageStars: Math.round(averageStars * 100) / 100, // 2 decimal places
+        recentActivity: leadsongsArray,
       };
 
       setAnalytics(analyticsData);
+      setHasMore(leadsongsArray.length > displayLimit);
       console.log('📊 Analytics loaded:', analyticsData);
 
     } catch (error: any) {
@@ -179,153 +133,128 @@ export const AnalyticsScreen: React.FC = () => {
       Alert.alert('Error', 'Failed to load analytics data');
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
+    if (visible) {
+      setLoading(true);
     fetchAnalytics();
-  }, []);
+    }
+  }, [visible]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchAnalytics();
+  const loadMore = () => {
+    setLoadingMore(true);
+    setDisplayLimit(prev => prev + 10);
+    setTimeout(() => {
+      setLoadingMore(false);
+      if (analytics && displayLimit + 10 >= analytics.recentActivity.length) {
+        setHasMore(false);
+      }
+    }, 500);
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading Analytics...</Text>
-      </View>
-    );
-  }
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    
+    return date.toLocaleDateString();
+  };
 
-  if (!analytics) {
-    return (
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Analytics</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {loading ? (
+      <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={styles.loadingText}>Loading analytics...</Text>
+      </View>
+        ) : !analytics ? (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>Failed to load analytics</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchAnalytics}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>📊 Rating Analytics</Text>
-        <Text style={styles.subtitle}>Track your submission activity</Text>
-      </View>
-
-      {/* Summary Cards */}
-      <View style={styles.summaryContainer}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryNumber}>{analytics.totalRatings}</Text>
-          <Text style={styles.summaryLabel}>Total Ratings</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryNumber}>{analytics.ratingsToday}</Text>
-          <Text style={styles.summaryLabel}>Today</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryNumber}>{analytics.ratingsThisWeek}</Text>
-          <Text style={styles.summaryLabel}>This Week</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryNumber}>{analytics.averageStars}</Text>
-          <Text style={styles.summaryLabel}>Avg Stars</Text>
-        </View>
-      </View>
-
-      {/* Ratings by Attribute */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📈 Ratings by Category</Text>
-        <View style={styles.attributeContainer}>
-          <View style={styles.attributeBar}>
-            <Text style={styles.attributeLabel}>🛡️ Safety</Text>
-            <View style={styles.attributeBarContainer}>
-              <View 
-                style={[
-                  styles.attributeBarFill, 
-                  { 
-                    width: `${(analytics.ratingsByAttribute.safety / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#7C3AED'
-                  }
-                ]} 
-              />
+        ) : (
+          <ScrollView
+            style={styles.scrollContent}
+          >
+            {/* Summary Cards */}
+            <View style={styles.summaryContainer}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryNumber}>{analytics.totalLeadsongs}</Text>
+                <Text style={styles.summaryLabel}>Leadsongs{'\n'}All-time</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryNumber}>{analytics.leadsongsThisWeek}</Text>
+                <Text style={styles.summaryLabel}>Leadsongs{'\n'}This Week</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryNumber}>{analytics.leadsongsToday}</Text>
+                <Text style={styles.summaryLabel}>Leadsongs{'\n'}Today</Text>
+              </View>
             </View>
-            <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.safety}</Text>
-          </View>
-          
-          <View style={styles.attributeBar}>
-            <Text style={styles.attributeLabel}>🔇 Quietness</Text>
-            <View style={styles.attributeBarContainer}>
-              <View 
-                style={[
-                  styles.attributeBarFill, 
-                  { 
-                    width: `${(analytics.ratingsByAttribute.quietness / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#7C3AED'
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.quietness}</Text>
-          </View>
-          
-          <View style={styles.attributeBar}>
-            <Text style={styles.attributeLabel}>🧹 Cleanliness</Text>
-            <View style={styles.attributeBarContainer}>
-              <View 
-                style={[
-                  styles.attributeBarFill, 
-                  { 
-                    width: `${(analytics.ratingsByAttribute.cleanliness / analytics.totalRatings) * 100}%`,
-                    backgroundColor: '#7C3AED'
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.attributeCount}>{analytics.ratingsByAttribute.cleanliness}</Text>
-          </View>
-        </View>
-      </View>
 
       {/* Recent Activity */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🕐 Recent Activity</Text>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
         {analytics.recentActivity.length === 0 ? (
           <Text style={styles.noDataText}>No recent activity</Text>
         ) : (
-          analytics.recentActivity.map((activity) => (
-            <View key={activity.id} style={styles.activityItem}>
-              <View style={styles.activityHeader}>
-                <Text style={styles.activityAttribute}>
-                  {activity.attribute === 'noise' ? '🔊' : 
-                   activity.attribute === 'safety' ? '🛡️' : '🧹'} {activity.attribute}
-                </Text>
-                <Text style={styles.activityStars}>
-                  {'♪'.repeat(activity.stars)}
-                </Text>
-              </View>
+                <>
+                  {analytics.recentActivity.slice(0, displayLimit).map((activity, index) => (
+                    <View key={`${activity.id}-${index}`} style={styles.activityItem}>
               <Text style={styles.activityProperty}>{activity.property_name}</Text>
               <Text style={styles.activityAddress}>{activity.property_address}</Text>
               <Text style={styles.activityTime}>
-                {new Date(activity.created_at).toLocaleString()}
+                        {formatDate(activity.created_at)}
               </Text>
             </View>
-          ))
+                  ))}
+                  
+                  {hasMore && displayLimit < analytics.recentActivity.length && (
+                    <TouchableOpacity 
+                      style={styles.loadMoreButton}
+                      onPress={loadMore}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? (
+                        <ActivityIndicator size="small" color="#7C3AED" />
+                      ) : (
+                        <Text style={styles.loadMoreText}>Load More</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </>
         )}
       </View>
 
       <View style={styles.bottomPadding} />
     </ScrollView>
+        )}
+      </View>
+    </Modal>
   );
 };
 
@@ -338,10 +267,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
   },
   loadingText: {
-    fontSize: 18,
+    marginTop: 16,
+    fontSize: 16,
+    fontFamily: GlobalFonts.regular,
     color: '#666',
   },
   errorContainer: {
@@ -369,32 +299,49 @@ const styles = StyleSheet.create({
     fontFamily: GlobalFonts.bold,
   },
   header: {
-    padding: 20,
-    backgroundColor: 'white',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+    backgroundColor: '#7C3AED',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#6B2FD1',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '700',
     fontFamily: GlobalFonts.bold,
-    color: '#333',
+    color: '#fff',
   },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: GlobalFonts.regular,
-    color: '#666',
-    marginTop: 4,
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  scrollContent: {
+    flex: 1,
   },
   summaryContainer: {
     flexDirection: 'row',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
     gap: 10,
   },
   summaryCard: {
     flex: 1,
     backgroundColor: 'white',
-    padding: 15,
+    padding: 12,
     borderRadius: 12,
     alignItems: 'center',
     shadowColor: '#000',
@@ -402,19 +349,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    minHeight: 80,
+    justifyContent: 'center',
   },
   summaryNumber: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
     color: '#7C3AED',
+    marginBottom: 4,
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: GlobalFonts.regular,
     color: '#666',
-    marginTop: 4,
     textAlign: 'center',
+    lineHeight: 14,
   },
   section: {
     backgroundColor: 'white',
@@ -435,73 +385,24 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
-  attributeContainer: {
-    gap: 15,
-  },
-  attributeBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  attributeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: GlobalFonts.bold,
-    width: 80,
-  },
-  attributeBarContainer: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 4,
-  },
-  attributeBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  attributeCount: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: GlobalFonts.bold,
-    color: '#666',
-    width: 30,
-    textAlign: 'right',
-  },
   activityItem: {
     padding: 15,
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
     marginBottom: 10,
   },
-  activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  activityAttribute: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: GlobalFonts.bold,
-    textTransform: 'capitalize',
-  },
-  activityStars: {
-    fontSize: 16,
-    fontFamily: GlobalFonts.regular,
-    color: '#7C3AED',
-  },
   activityProperty: {
     fontSize: 16,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   activityAddress: {
     fontSize: 14,
     fontFamily: GlobalFonts.regular,
     color: '#666',
-    marginBottom: 5,
+    marginBottom: 6,
   },
   activityTime: {
     fontSize: 12,
@@ -514,6 +415,19 @@ const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
     padding: 20,
+  },
+  loadMoreButton: {
+    backgroundColor: '#7C3AED',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  loadMoreText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
   },
   bottomPadding: {
     height: 20,

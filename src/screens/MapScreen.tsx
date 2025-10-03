@@ -21,6 +21,10 @@ import { sanitizeUsername } from '../lib/profanityFilter';
 import { GlobalFonts } from '../styles/global';
 import { FloatingMenu } from '../components/FloatingMenu';
 import { preloadSounds } from '../services/noteSound';
+import { EarningsScreen } from './EarningsScreen';
+import { AnalyticsScreen } from './AnalyticsScreen';
+import { RewardsScreen } from './RewardsScreen';
+import { BuyCreditsScreen } from './BuyCreditsScreen';
 // Properties loaded dynamically by ClusteredMapView
 
 const { width, height } = Dimensions.get('window');
@@ -66,6 +70,18 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
 
   // Settings modal state
   const [settingsVisible, setSettingsVisible] = useState(false);
+  
+  // Earnings modal state
+  const [earningsVisible, setEarningsVisible] = useState(false);
+  
+  // Analytics modal state
+  const [analyticsVisible, setAnalyticsVisible] = useState(false);
+  
+  // Rewards modal state
+  const [rewardsVisible, setRewardsVisible] = useState(false);
+  
+  // Buy Credits modal state
+  const [buyCreditsVisible, setBuyCreditsVisible] = useState(false);
   
   // Track which properties the user has rated
   const [ratedPropertyIds, setRatedPropertyIds] = useState<Set<string>>(new Set());
@@ -753,7 +769,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
       }]}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search any address to hear a song..."
+          placeholder="Search any address to find a Leadalbum..."
           value={searchQuery}
           onChangeText={handleSearch}
           autoCapitalize="none"
@@ -857,9 +873,10 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
       {/* Floating Menu Button */}
       <FloatingMenu
         credits={userCredits}
-        onBuyCredits={() => navigation.navigate('BuyCredits')}
-        onEarnings={() => navigation.navigate('Earnings')}
-        onAnalytics={() => navigation.navigate('Analytics')}
+        onBuyCredits={() => setBuyCreditsVisible(true)}
+        onEarnings={() => setEarningsVisible(true)}
+        onAnalytics={() => setAnalyticsVisible(true)}
+        onRewards={() => setRewardsVisible(true)}
         onSettings={() => setSettingsVisible(true)}
         onMenuVisibilityChange={setMenuVisible}
         isScreenFocused={isMapFocused}
@@ -885,7 +902,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
         enableProximityLoading={proximityMode}
         ratedPropertyIds={ratedPropertyIds}
         autoOrientEnabled={autoOrientEnabled}
-        lockRotation={menuVisible || modalVisible || settingsVisible}
+        lockRotation={menuVisible || modalVisible || settingsVisible || earningsVisible || analyticsVisible || rewardsVisible || buyCreditsVisible}
         style={styles.map}
         ref={mapRef}
       />
@@ -962,7 +979,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              {showLeaderboard ? 'Billboard' : 'Sing a Song'}
+              {showLeaderboard ? 'Billboard' : 'Sing a Leadsong'}
             </Text>
             <TouchableOpacity onPress={handleModalClose} style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
@@ -1012,11 +1029,11 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                 {hasRatedRecently && (
                   <View style={styles.rateLimitContainer}>
                     <Text style={styles.alreadyRatedText}>
-                      ✅ You have already rated this property within the hour
+                      You have rated this property within the hour
                     </Text>
                     {countdown && (
                       <Text style={styles.countdownText}>
-                        ⏱️ You can rate again in: {countdown}
+                        You can rate again in: {countdown}
                       </Text>
                     )}
                   </View>
@@ -1168,12 +1185,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
             {/* Auto-Orient Toggle */}
             <View style={styles.settingsOption}>
               <View style={styles.settingRow}>
-                <View style={styles.settingTextContainer}>
-                  <Text style={styles.settingsOptionText}>🧭 Auto-Orient Map</Text>
-                  <Text style={styles.settingDescription}>
-                    Automatically rotate map to match device direction
-                  </Text>
-                </View>
+                <Text style={styles.settingsOptionText}>Auto-Orient Map</Text>
                 <Switch
                   value={autoOrientEnabled}
                   onValueChange={async (value) => {
@@ -1221,11 +1233,35 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                 );
               }}
             >
-              <Text style={styles.settingsOptionText}>🚪 Sign Out</Text>
+              <Text style={styles.settingsOptionText}>Sign Out</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Earnings Modal */}
+      <EarningsScreen
+        visible={earningsVisible}
+        onClose={() => setEarningsVisible(false)}
+      />
+
+      {/* Analytics Modal */}
+      <AnalyticsScreen
+        visible={analyticsVisible}
+        onClose={() => setAnalyticsVisible(false)}
+      />
+
+      {/* Rewards Modal */}
+      <RewardsScreen
+        visible={rewardsVisible}
+        onClose={() => setRewardsVisible(false)}
+      />
+
+      {/* Buy Credits Modal */}
+      <BuyCreditsScreen
+        visible={buyCreditsVisible}
+        onClose={() => setBuyCreditsVisible(false)}
+      />
     </View>
   );
 };

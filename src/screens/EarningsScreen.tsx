@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  RefreshControl,
   Alert,
   ActivityIndicator,
   TouchableOpacity,
   Linking,
+  Modal,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { getUserPendingPayouts, getUserContributorStats } from '../services/revenueSharing';
 import { 
   getPayoutHistory, 
@@ -21,6 +20,7 @@ import {
   getUserStripeAccount,
   requestPayout
 } from '../services/stripeConnect';
+import { getProperty } from '../services/properties';
 import { GlobalFonts } from '../styles/global';
 
 interface PendingPayout {
@@ -33,19 +33,29 @@ interface PendingPayout {
 }
 
 interface ContributorStats {
+  property_id: string;
   user_id: string;
   total_ratings: number;
   last_rating_at: string;
 }
 
-export const EarningsScreen: React.FC = () => {
+interface ContributorStatsWithAddress extends ContributorStats {
+  address?: string;
+}
+
+interface EarningsScreenProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export const EarningsScreen: React.FC<EarningsScreenProps> = ({ visible, onClose }) => {
   const [pendingPayouts, setPendingPayouts] = useState<PendingPayout[]>([]);
-  const [contributorStats, setContributorStats] = useState<ContributorStats[]>([]);
+  const [contributorStats, setContributorStats] = useState<ContributorStatsWithAddress[]>([]);
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<any>(null);
   const [settingUpAccount, setSettingUpAccount] = useState(false);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   const loadData = async () => {
     try {
@@ -77,8 +87,27 @@ export const EarningsScreen: React.FC = () => {
         stripeConnect: connectStatus
       });
 
+      // Fetch property addresses for contributor stats
+      const statsWithAddresses = await Promise.all(
+        statsData.map(async (stat) => {
+          try {
+            const property = await getProperty(stat.property_id);
+            return {
+              ...stat,
+              address: property?.address || `Property ${stat.property_id.substring(0, 8)}...`,
+            };
+          } catch (error) {
+            console.error('Error fetching property:', error);
+            return {
+              ...stat,
+              address: `Property ${stat.property_id.substring(0, 8)}...`,
+            };
+          }
+        })
+      );
+
       setPendingPayouts(payoutsData);
-      setContributorStats(statsData);
+      setContributorStats(statsWithAddresses);
       setPayoutHistory(historyData);
       setStripeConnectStatus(connectStatus);
     } catch (error) {
@@ -86,27 +115,14 @@ export const EarningsScreen: React.FC = () => {
       Alert.alert('Error', 'Failed to load earnings data');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  // Refresh data when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (!loading) {
-        loadData();
-      }
-    }, [loading])
-  );
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadData();
-  };
+    if (visible) {
+      loadData();
+    }
+  }, [visible]);
 
   const handleCashOutSetup = async () => {
     if (settingUpAccount) return;
@@ -280,167 +296,195 @@ export const EarningsScreen: React.FC = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#7C3AED" />
-        <Text style={styles.loadingText}>Loading earnings...</Text>
-      </View>
-    );
-  }
-
   const totalEarnings = calculateTotalEarnings();
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Your Earnings</Text>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>
-            {totalEarnings > 0 ? 'EARNINGS READY' : 'NO EARNINGS'}
-          </Text>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Earnings</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Earnings Summary */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Available Balance</Text>
-        <Text style={styles.availableAmount}>{formatAmount(totalEarnings)}</Text>
-        <Text style={styles.payoutCountText}>
-          {pendingPayouts.length} pending payout{pendingPayouts.length !== 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      {/* Bank Account Status & Actions */}
-      <View style={styles.actionContainer}>
-        {/* Always show Stripe Connection button */}
-        <TouchableOpacity 
-          style={[styles.setupButton, settingUpAccount && styles.disabledButton]} 
-          onPress={handleCashOutSetup}
-          disabled={settingUpAccount}
-        >
-          <Text style={styles.setupButtonText}>
-            {settingUpAccount ? 'Setting Up...' : '🔗 Stripe Connection'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Always show Request Payout button */}
-        <TouchableOpacity 
-          style={[styles.setupButton, styles.successButton, { marginTop: 12 }]} 
-          onPress={handleRequestPayout}
-          disabled={totalEarnings < 1.00}
-        >
-          <Text style={styles.setupButtonText}>
-            💰 Request Payout ({formatAmount(totalEarnings)})
-          </Text>
-        </TouchableOpacity>
-
-        {/* Status text based on connection state */}
-        {stripeConnectStatus?.payouts_enabled ? (
-          <Text style={styles.statusText}>✅ Bank account connected and verified</Text>
-        ) : stripeConnectStatus?.has_account ? (
-          <Text style={styles.statusText}>⚠️ Bank setup incomplete</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={styles.loadingText}>Loading earnings...</Text>
+          </View>
         ) : (
-          <Text style={styles.statusText}>🏦 Connect your bank account to receive payments</Text>
-        )}
-      </View>
+          <ScrollView
+            style={styles.scrollContent}
+          >
+          {/* Earnings Summary */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Available Balance</Text>
+            <Text style={styles.availableAmount}>{formatAmount(totalEarnings)}</Text>
+          </View>
 
-      {/* How Earnings Work */}
-      <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>💰 How You Earn Money</Text>
-        <Text style={styles.infoText}>
-          • <Text style={styles.boldText}>Top Contributor</Text>: Get 10% of report revenue when you're the #1 rater for a property{'\n'}
-          • <Text style={styles.boldText}>Other Contributors</Text>: Share 10% of revenue proportionally based on your ratings{'\n'}
-          • <Text style={styles.boldText}>Revenue Split</Text>: 80% platform, 10% top contributor, 10% other contributors
-        </Text>
-      </View>
+          {/* Bank Account Status & Actions */}
+          <View style={styles.actionContainer}>
+            {/* Stripe Connection button */}
+            <TouchableOpacity 
+              style={[styles.setupButton, settingUpAccount && styles.disabledButton]} 
+              onPress={handleCashOutSetup}
+              disabled={settingUpAccount}
+            >
+              <Text style={styles.setupButtonText}>
+                {settingUpAccount ? 'Setting Up...' : 'Stripe Connection'}
+              </Text>
+            </TouchableOpacity>
 
-      {/* Pending Payouts */}
-      {pendingPayouts.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pending Payouts</Text>
-          {pendingPayouts.map((payout) => (
-            <View key={payout.id} style={styles.payoutItem}>
-              <View style={styles.payoutHeader}>
-                <Text style={styles.payoutAmount}>{formatAmount(payout.payout_amount)}</Text>
-                <View style={[
-                  styles.contributorBadge,
-                  payout.is_top_contributor ? styles.topContributorBadge : styles.otherContributorBadge
-                ]}>
-                  <Text style={[
-                    styles.contributorBadgeText,
-                    payout.is_top_contributor ? styles.topContributorText : styles.otherContributorText
-                  ]}>
-                    {payout.is_top_contributor ? '🏆 TOP' : '👥 CONTRIBUTOR'}
+            {/* Request Payout button */}
+            <TouchableOpacity 
+              style={[styles.setupButton, styles.successButton, { marginTop: 12 }]} 
+              onPress={handleRequestPayout}
+              disabled={totalEarnings < 1.00}
+            >
+              <Text style={styles.setupButtonText}>
+                Request Payout ({formatAmount(totalEarnings)})
+              </Text>
+            </TouchableOpacity>
+
+            {/* Status text with help button */}
+            {stripeConnectStatus?.payouts_enabled ? (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusTextWithButton}>Bank account connected and verified</Text>
+                <TouchableOpacity 
+                  style={styles.helpButton}
+                  onPress={() => setShowHowItWorks(true)}
+                >
+                  <Text style={styles.helpButtonText}>?</Text>
+                </TouchableOpacity>
+              </View>
+            ) : stripeConnectStatus?.has_account ? (
+              <Text style={styles.statusTextCentered}>⚠️ Bank setup incomplete</Text>
+            ) : (
+              <Text style={styles.statusTextCentered}>🏦 Connect your bank account to receive payments</Text>
+            )}
+          </View>
+
+          {/* Pending Payouts */}
+          {pendingPayouts.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Pending Payouts</Text>
+              {pendingPayouts.map((payout) => (
+                <View key={payout.id} style={styles.payoutItem}>
+                  <View style={styles.payoutHeader}>
+                    <Text style={styles.payoutAmount}>{formatAmount(payout.payout_amount)}</Text>
+                    <View style={[
+                      styles.contributorBadge,
+                      payout.is_top_contributor ? styles.topContributorBadge : styles.otherContributorBadge
+                    ]}>
+                      <Text style={[
+                        styles.contributorBadgeText,
+                        payout.is_top_contributor ? styles.topContributorText : styles.otherContributorText
+                      ]}>
+                        {payout.is_top_contributor ? 'TOP' : '👥 CONTRIBUTOR'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.payoutDetails}>
+                    Based on {payout.rating_count} rating{payout.rating_count !== 1 ? 's' : ''}
+                  </Text>
+                  <Text style={styles.payoutDate}>
+                    Earned: {formatDate(payout.created_at)}
                   </Text>
                 </View>
-              </View>
-              <Text style={styles.payoutDetails}>
-                Based on {payout.rating_count} rating{payout.rating_count !== 1 ? 's' : ''}
+              ))}
+            </View>
+          )}
+
+          {/* Contributor Stats */}
+          {contributorStats.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Your Contributions</Text>
+              {contributorStats.slice(0, 5).map((stat, index) => (
+                <View key={`${stat.property_id}-${index}`} style={styles.statItem}>
+                  <Text style={styles.statProperty}>{stat.address}</Text>
+                  <View style={styles.statDetails}>
+                    <Text style={styles.statRatings}>{stat.total_ratings} ratings</Text>
+                    <Text style={styles.statDate}>
+                      Last: {formatDate(stat.last_rating_at)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Payout History */}
+          {payoutHistory.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Payout History</Text>
+              {payoutHistory.slice(0, 5).map((payout, index) => (
+                <View key={payout.id || index} style={styles.historyItem}>
+                  <View style={styles.historyHeader}>
+                    <Text style={styles.historyAmount}>{formatAmount(payout.payout_amount || 0)}</Text>
+                    <Text style={[styles.historyStatus, styles.completedStatus]}>
+                      {payout.status || 'completed'}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyDate}>
+                    {formatDate(payout.processed_at || payout.created_at)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Empty State */}
+          {totalEarnings === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Start Earning Money! 💰</Text>
+              <Text style={styles.emptyText}>
+                Rate properties to become a top contributor and earn money when reports are purchased.
               </Text>
-              <Text style={styles.payoutDate}>
-                Earned: {formatDate(payout.created_at)}
+              <Text style={styles.emptySubtext}>
+                The more you rate, the higher your chances of being the top contributor for a property!
               </Text>
             </View>
-          ))}
-        </View>
-      )}
+          )}
+        </ScrollView>
+        )}
 
-      {/* Contributor Stats */}
-      {contributorStats.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Contributions</Text>
-          {contributorStats.slice(0, 5).map((stat, index) => (
-            <View key={`${stat.user_id}-${index}`} style={styles.statItem}>
-              <Text style={styles.statProperty}>Property {stat.user_id.substring(0, 8)}...</Text>
-              <View style={styles.statDetails}>
-                <Text style={styles.statRatings}>{stat.total_ratings} ratings</Text>
-                <Text style={styles.statDate}>
-                  Last: {formatDate(stat.last_rating_at)}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Payout History */}
-      {payoutHistory.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payout History</Text>
-          {payoutHistory.slice(0, 5).map((payout, index) => (
-            <View key={payout.id || index} style={styles.historyItem}>
-              <View style={styles.historyHeader}>
-                <Text style={styles.historyAmount}>{formatAmount(payout.payout_amount || 0)}</Text>
-                <Text style={[styles.historyStatus, styles.completedStatus]}>
-                  {payout.status || 'completed'}
-                </Text>
-              </View>
-              <Text style={styles.historyDate}>
-                {formatDate(payout.processed_at || payout.created_at)}
+        {/* How It Works Modal */}
+        <Modal
+          visible={showHowItWorks}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowHowItWorks(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowHowItWorks(false)}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>How You Earn Money</Text>
+              <Text style={styles.modalText}>
+                • <Text style={styles.boldText}>Top Contributor</Text>: Get 10% of report revenue when you're the #1 rater for a property{'\n\n'}
+                • <Text style={styles.boldText}>Other Contributors</Text>: Share 10% of revenue proportionally based on your ratings{'\n\n'}
+                • <Text style={styles.boldText}>Revenue Split</Text>: 80% platform, 10% top contributor, 10% other contributors
               </Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowHowItWorks(false)}
+              >
+                <Text style={styles.modalCloseButtonText}>Got it</Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </View>
-      )}
-
-      {/* Empty State */}
-      {totalEarnings === 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Start Earning Money! 💰</Text>
-          <Text style={styles.emptyText}>
-            Rate properties to become a top contributor and earn money when reports are purchased.
-          </Text>
-          <Text style={styles.emptySubtext}>
-            The more you rate, the higher your chances of being the top contributor for a property!
-          </Text>
-        </View>
-      )}
-    </ScrollView>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    </Modal>
   );
 };
 
@@ -465,31 +509,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+    backgroundColor: '#7C3AED',
+    borderBottomWidth: 1,
+    borderBottomColor: '#6B2FD1',
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     fontFamily: GlobalFonts.bold,
-    color: '#333',
-  },
-  statusBadge: {
-    backgroundColor: '#7C3AED',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
     color: '#fff',
-    fontSize: 12,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#fff',
     fontWeight: '600',
-    fontFamily: GlobalFonts.bold,
+  },
+  scrollContent: {
+    flex: 1,
   },
   summaryCard: {
     backgroundColor: '#fff',
     margin: 20,
-    marginTop: 10,
+    marginTop: 20,
     padding: 24,
     borderRadius: 12,
     shadowColor: '#000',
@@ -510,13 +562,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: GlobalFonts.bold,
     color: '#7C3AED',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  payoutCountText: {
-    fontSize: 14,
-    fontFamily: GlobalFonts.regular,
-    color: '#666',
     textAlign: 'center',
   },
   actionContainer: {
@@ -539,48 +584,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#ccc',
     opacity: 0.6,
   },
-  warningButton: {
-    backgroundColor: '#7C3AED',
-  },
   successButton: {
     backgroundColor: '#7C3AED',
   },
-  secondaryButton: {
-    backgroundColor: '#666',
-  },
-  buttonRow: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
-  statusText: {
+  statusTextWithButton: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginRight: 8,
+  },
+  statusTextCentered: {
     fontSize: 12,
     color: '#666',
     textAlign: 'center',
     marginTop: 8,
   },
-  infoCard: {
-    backgroundColor: '#F5F0FF',
-    margin: 20,
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#7C3AED',
+  helpButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  helpButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
-    color: '#7C3AED',
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    fontFamily: GlobalFonts.regular,
-    color: '#7C3AED',
-    lineHeight: 20,
-  },
-  boldText: {
-    fontWeight: '600',
   },
   section: {
     paddingHorizontal: 20,
@@ -663,6 +700,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontFamily: GlobalFonts.regular,
     color: '#333',
+    flex: 1,
+    marginRight: 8,
   },
   statDetails: {
     alignItems: 'flex-end',
@@ -743,5 +782,50 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
+    color: '#7C3AED',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  boldText: {
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
+  },
+  modalCloseButton: {
+    backgroundColor: '#7C3AED',
+    borderRadius: 8,
+    padding: 12,
+  },
+  modalCloseButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
+    textAlign: 'center',
   },
 });

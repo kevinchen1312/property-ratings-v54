@@ -80,12 +80,14 @@ const ClusterMarker: React.FC<ClusterMarkerProps> = ({ point, onPress, isRated }
       tracksViewChanges={false}
       zIndex={1000}
     >
-      <LeadsongPin
-        size={40}
-        pinColor={isRated ? '#999999' : '#7C3AED'}
-        iconColor="#FFFFFF"
-        shadow={false}
-      />
+      <View style={styles.markerTouchArea}>
+        <LeadsongPin
+          size={40}
+          pinColor={isRated ? '#999999' : '#7C3AED'}
+          iconColor="#FFFFFF"
+          shadow={false}
+        />
+      </View>
     </Marker>
   );
 };
@@ -321,6 +323,11 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   const handleRegionChangeComplete = (newRegion: Region) => {
     setRegion(newRegion);
   };
+  
+  const handleRegionChange = () => {
+    // Dismiss keyboard when user starts scrolling/panning
+    if (onMapPress) onMapPress();
+  };
 
   // Detect manual rotation by user
   const handlePanDrag = () => {
@@ -331,20 +338,30 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   };
 
   // Re-enable auto-rotation and center on user when custom button is pressed
-  const handleCenterButtonPress = () => {
+  const handleCenterButtonPress = async () => {
     if (userLocation && mapRef.current) {
       // Re-enable auto-rotation
       hasManuallyRotatedRef.current = false;
       console.log('🔓 Auto-rotation re-enabled via center button');
       
-      // Animate camera to user location with current device heading
+      // Get fresh heading immediately when button is pressed
+      let headingToUse = currentHeading || 0;
+      try {
+        const headingData = await Location.getHeadingAsync();
+        headingToUse = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
+        console.log(`🧭 Fresh heading for recenter: ${headingToUse}°`);
+      } catch (error) {
+        console.log('🧭 Using cached heading:', headingToUse);
+      }
+      
+      // Animate camera to user location with fresh device heading
       mapRef.current.animateCamera({
         center: {
           latitude: userLocation.latitude,
           longitude: userLocation.longitude,
         },
         pitch: 45,
-        heading: currentHeading, // Use current device heading for auto-orientation
+        heading: headingToUse, // Use fresh device heading
         altitude: 350,
         zoom: 18,
       }, { duration: 500 });
@@ -398,9 +415,13 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
           zoom: 18, // 2 zoom levels closer
         }}
         onMapReady={handleMapReady}
+        onRegionChange={handleRegionChange}
         onRegionChangeComplete={handleRegionChangeComplete}
         onPress={onMapPress}
-        onPanDrag={handlePanDrag} // Detect manual rotation/panning
+        onPanDrag={() => {
+          handlePanDrag();
+          if (onMapPress) onMapPress(); // Also dismiss keyboard when dragging
+        }} // Detect manual rotation/panning
         showsUserLocation={false}
         showsMyLocationButton={false} // Hide default button, use custom one
         showsCompass
@@ -508,6 +529,11 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  markerTouchArea: {
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   centerButton: {
     position: 'absolute',

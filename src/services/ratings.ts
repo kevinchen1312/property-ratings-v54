@@ -263,12 +263,5 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
     );
     throw new Error(`Database error: ${error.message}`);
   }
-
-  // Success toast
-  Alert.alert(
-    'Success! 🎉',
-    'Your ratings have been submitted successfully. Thank you for your feedback!',
-    [{ text: 'OK' }]
-  );
 };
 

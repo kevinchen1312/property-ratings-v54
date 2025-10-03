@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 
 export interface ContributorStats {
+  property_id: string;
   user_id: string;
   total_ratings: number;
   last_rating_at: string;

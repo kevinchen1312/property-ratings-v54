@@ -170,6 +170,10 @@ export const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
           
           {CREDIT_PACKAGES.map(renderPackage)}
           
+          <View style={styles.newBox}>
+            <Text style={styles.newBoxText}>📦 New Box - Add Your Content Here</Text>
+          </View>
+          
           <View style={styles.infoContainer}>
             <Text style={styles.infoTitle}>💡 How it works:</Text>
             <Text style={styles.infoText}>
@@ -336,6 +340,26 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     color: '#007AFF',
     fontSize: 14,
+  },
+  newBox: {
+    backgroundColor: '#FFE5B4',
+    padding: 20,
+    borderRadius: 12,
+    margin: 8,
+    borderWidth: 3,
+    borderColor: '#FF6B35',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    minHeight: 80,
+  },
+  newBoxText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FF6B35',
+    textAlign: 'center',
   },
   infoContainer: {
     backgroundColor: '#f0f8ff',
