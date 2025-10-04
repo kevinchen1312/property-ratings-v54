@@ -37,9 +37,9 @@ export const stripeConfig = {
 // Deep Link Configuration
 export const deepLinkConfig = {
   // For development, use web page instead of deep link (Expo Go doesn't support custom schemes)
-  successScheme: process.env.APP_SUCCESS_DEEPLINK_SCHEME || 'https://leadongs-credits.vercel.app/return',
-  cancelScheme: process.env.APP_CANCEL_DEEPLINK_SCHEME || 'https://leadongs-credits.vercel.app/credits',
-  siteUrl: process.env.SITE_URL || 'https://leadsong.com',
+  successScheme: process.env.APP_SUCCESS_DEEPLINK_SCHEME || 'https://credits.leadsong.com/return',
+  cancelScheme: process.env.APP_CANCEL_DEEPLINK_SCHEME || 'https://credits.leadsong.com',
+  siteUrl: process.env.SITE_URL || 'https://credits.leadsong.com',
 };
 
 /**

@@ -80,9 +80,9 @@ export async function getUserCredits(userId: string): Promise<number> {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
-    .from('profiles')
+    .from('user_credits')
     .select('credits')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single();
 
   if (error) {

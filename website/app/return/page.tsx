@@ -36,15 +36,6 @@ function ReturnPageContent() {
           You can now return to the Leadsong app.
         </p>
 
-        <div className={styles.instructions}>
-          <p><strong>To return to the app:</strong></p>
-          <ol>
-            <li>Close this browser tab</li>
-            <li>Go back to the Leadsong app</li>
-            <li>Your credits will appear within seconds</li>
-          </ol>
-        </div>
-
         <div className={styles.help}>
           <p>Credits will appear in your account within a few seconds.</p>
           <p className={styles.support}>

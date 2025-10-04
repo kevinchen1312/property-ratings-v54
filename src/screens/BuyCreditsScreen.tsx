@@ -72,8 +72,8 @@ export const BuyCreditsScreen: React.FC<BuyCreditsScreenProps> = ({ visible, onC
         return;
       }
 
-      // Open credit purchase website with auth token
-      const url = `https://leadongs-credits.vercel.app/credits?access_token=${session.access_token}`;
+      // Open credit purchase website
+      const url = `https://credits.leadsong.com`;
       const supported = await Linking.canOpenURL(url);
       
       if (supported) {

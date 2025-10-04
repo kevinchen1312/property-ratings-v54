@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import { getCurrentUser, getUserCredits } from '@/lib/supabaseServer';
 import { CREDIT_PACKAGES } from '@/lib/config';
 import PackageCard from '@/components/PackageCard';
+import SignOutButton from '@/components/SignOutButton';
 import styles from './page.module.css';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseConfig } from '@/lib/config';
@@ -58,11 +59,16 @@ export default async function CreditsPage({
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Buy Credits</h1>
-        <div className={styles.balanceCard}>
-          <span className={styles.balanceLabel}>Current Balance</span>
-          <span className={styles.balanceValue}>{currentCredits}</span>
-          <span className={styles.balanceUnit}>credits</span>
+        <div className={styles.headerLeft}>
+          <h1 className={styles.title}>Buy Credits</h1>
+        </div>
+        <div className={styles.headerRight}>
+          <div className={styles.balanceCard}>
+            <span className={styles.balanceLabel}>Current Balance</span>
+            <span className={styles.balanceValue}>{currentCredits}</span>
+            <span className={styles.balanceUnit}>credits</span>
+          </div>
+          <SignOutButton />
         </div>
       </header>
 
