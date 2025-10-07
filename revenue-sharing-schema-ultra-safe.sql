@@ -126,10 +126,41 @@ CREATE TRIGGER trigger_update_contributor_stats
   FOR EACH ROW
   EXECUTE FUNCTION update_contributor_stats();
 
--- Drop existing function if it exists
+-- Drop existing functions if they exist
+DROP FUNCTION IF EXISTS get_top_contributors(UUID);
 DROP FUNCTION IF EXISTS get_top_contributor(UUID);
 
--- Function to get top contributor for a property in the past month
+-- Function to get top 3 contributors (gold, silver, bronze) for a property
+CREATE OR REPLACE FUNCTION get_top_contributors(property_uuid UUID)
+RETURNS TABLE (
+  user_id UUID,
+  rating_count BIGINT,
+  rank INTEGER
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH ranked_contributors AS (
+    SELECT 
+      r.user_id,
+      COUNT(*) as rating_count,
+      ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) as rank
+    FROM rating r
+    WHERE r.property_id = property_uuid
+      AND r.created_at >= NOW() - INTERVAL '1 year'
+      AND r.user_id IS NOT NULL
+    GROUP BY r.user_id
+  )
+  SELECT 
+    rc.user_id,
+    rc.rating_count,
+    rc.rank::INTEGER
+  FROM ranked_contributors rc
+  WHERE rc.rank <= 3
+  ORDER BY rc.rank;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Keep the old function for backward compatibility
 CREATE OR REPLACE FUNCTION get_top_contributor(property_uuid UUID)
 RETURNS TABLE (
   user_id UUID,
@@ -142,7 +173,8 @@ BEGIN
     COUNT(*) as rating_count
   FROM rating r
   WHERE r.property_id = property_uuid
-    AND r.created_at >= NOW() - INTERVAL '30 days'
+    AND r.created_at >= NOW() - INTERVAL '1 year'
+    AND r.user_id IS NOT NULL
   GROUP BY r.user_id
   ORDER BY COUNT(*) DESC
   LIMIT 1;

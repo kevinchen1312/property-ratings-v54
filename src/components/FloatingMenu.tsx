@@ -26,29 +26,53 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
   isScreenFocused = true,
 }) => {
   const [menuVisible, setMenuVisible] = useState(false);
-  const [scaleAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(500)); // Start below screen
+  const [fadeAnim] = useState(new Animated.Value(0)); // Start transparent
 
   const openMenu = () => {
-    // Set scale to 1 immediately for instant appearance
-    scaleAnim.setValue(1);
+    console.log('FloatingMenu: Opening menu');
     setMenuVisible(true);
     onMenuVisibilityChange?.(true);
+    
+    // Reset animation values first
+    slideAnim.setValue(500);
+    fadeAnim.setValue(0);
+    
+    // Then slide up and fade in animation
+    Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 10,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
   const closeMenu = () => {
+    console.log('FloatingMenu: Closing menu');
+    // Set menu invisible immediately to unblock interactions
     setMenuVisible(false);
     onMenuVisibilityChange?.(false);
-    // Reset animation to 0 after closing
-    setTimeout(() => {
-      scaleAnim.setValue(0);
-    }, 100);
+    
+    // Reset animations for next open
+    slideAnim.setValue(500);
+    fadeAnim.setValue(0);
   };
 
   const handleMenuAction = (action: () => void) => {
-    console.log('FloatingMenu: Menu action triggered');
-    // Close menu and navigate
+    console.log('FloatingMenu: Menu action triggered, closing menu and executing action');
+    // Close menu first to unblock UI
     closeMenu();
-    action();
+    // Execute action immediately after
+    requestAnimationFrame(() => {
+      action();
+    });
   };
 
   // Calculate badge width based on number of digits
@@ -74,32 +98,45 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
         </View>
       </TouchableOpacity>
 
-      {/* Menu Overlay */}
-      <Modal
-        visible={menuVisible && isScreenFocused}
-        transparent
-        animationType="none"
-        onRequestClose={closeMenu}
-      >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={closeMenu}
+      {/* Menu Overlay - Only render when visible */}
+      {menuVisible && (
+        <Modal
+          visible={isScreenFocused}
+          transparent
+          animationType="none"
+          onRequestClose={closeMenu}
         >
+          <View style={styles.modalContent} pointerEvents="box-none">
+            {/* Background Overlay - Closes menu when tapped */}
+            <Animated.View 
+              style={[styles.overlayBackground, { opacity: fadeAnim }]}
+              pointerEvents="auto"
+            >
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                activeOpacity={1}
+                onPress={closeMenu}
+              />
+            </Animated.View>
+          
           {/* White Modal Container */}
           <Animated.View
             style={[
               styles.menuContainer,
               {
-                transform: [{ scale: scaleAnim }],
-                opacity: scaleAnim,
+                transform: [{ translateY: slideAnim }],
+                opacity: fadeAnim,
               },
             ]}
+            pointerEvents="auto"
           >
             {/* Buy Credits */}
             <TouchableOpacity
               style={[styles.verticalButton, styles.buyCreditsButton]}
-              onPress={() => handleMenuAction(onBuyCredits)}
+              onPress={() => {
+                console.log('Buy Credits button pressed');
+                handleMenuAction(onBuyCredits);
+              }}
               activeOpacity={0.8}
             >
               <Text style={styles.menuItemText}>Buy Credits</Text>
@@ -141,8 +178,9 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
               <Text style={styles.menuItemText}>Settings</Text>
             </TouchableOpacity>
           </Animated.View>
-        </TouchableOpacity>
-      </Modal>
+        </View>
+        </Modal>
+      )}
     </>
   );
 };
@@ -189,10 +227,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: GlobalFonts.bold,
   },
-  overlay: {
+  modalContent: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     alignItems: 'center',
+  },
+  overlayBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   menuContainer: {
     position: 'absolute',

@@ -445,10 +445,10 @@ export const EarningsScreen: React.FC<EarningsScreenProps> = ({ visible, onClose
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>Start Earning Money! 💰</Text>
               <Text style={styles.emptyText}>
-                Rate properties to become a top contributor and earn money when reports are purchased.
+                Rate properties to earn gold, silver, or bronze ranking and earn money when reports are purchased.
               </Text>
               <Text style={styles.emptySubtext}>
-                The more you rate, the higher your chances of being the top contributor for a property!
+                The more you rate, the higher your ranking! Gold earns 50%, Silver earns 20%, Bronze earns 10%.
               </Text>
             </View>
           )}
@@ -470,9 +470,10 @@ export const EarningsScreen: React.FC<EarningsScreenProps> = ({ visible, onClose
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>How You Earn Money</Text>
               <Text style={styles.modalText}>
-                • <Text style={styles.boldText}>Top Contributor</Text>: Get 10% of report revenue when you're the #1 rater for a property{'\n\n'}
-                • <Text style={styles.boldText}>Other Contributors</Text>: Share 10% of revenue proportionally based on your ratings{'\n\n'}
-                • <Text style={styles.boldText}>Revenue Split</Text>: 80% platform, 10% top contributor, 10% other contributors
+                • <Text style={styles.boldText}>🥇 Gold (Rank 1)</Text>: Earn 50% of report revenue as the top contributor{'\n\n'}
+                • <Text style={styles.boldText}>🥈 Silver (Rank 2)</Text>: Earn 20% of report revenue as the 2nd top contributor{'\n\n'}
+                • <Text style={styles.boldText}>🥉 Bronze (Rank 3)</Text>: Earn 10% of report revenue as the 3rd top contributor{'\n\n'}
+                • <Text style={styles.boldText}>Revenue Split</Text>: 50% gold, 20% silver, 10% bronze, 20% platform
               </Text>
               <TouchableOpacity
                 style={styles.modalCloseButton}

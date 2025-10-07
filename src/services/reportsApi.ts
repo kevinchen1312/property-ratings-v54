@@ -83,7 +83,7 @@ export async function redeemReports(propertyIds: string[], email?: string) {
     // Call the redeemReports Edge Function which handles:
     // - Credit deduction
     // - Report generation
-    // - Revenue sharing (10% to top contributor, 10% split among others)
+    // - Revenue sharing (50% gold, 20% silver, 10% bronze, 20% platform)
     // - Email sending
     const reportRes = await fetch(`https://${SUPABASE_REF}.functions.supabase.co/redeemReports`, {
       method: "POST",

@@ -17,6 +17,11 @@ interface AnalyticsScreenProps {
   onClose: () => void;
 }
 
+interface RatingDetail {
+  attribute: string;
+  stars: number;
+}
+
 interface LeadsongActivity {
   id: string;
   created_at: string;
@@ -24,12 +29,13 @@ interface LeadsongActivity {
   property_address: string;
   property_id: string;
   leadsong_time: string;
+  ratings?: RatingDetail[];
 }
 
 interface AnalyticsData {
   totalLeadsongs: number;
   leadsongsToday: number;
-  leadsongsThisWeek: number;
+  leadsongsThisMonth: number;
   averageStars: number;
   recentActivity: LeadsongActivity[];
 }
@@ -40,6 +46,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
   const [loadingMore, setLoadingMore] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(10);
   const [hasMore, setHasMore] = useState(true);
+  const [selectedActivity, setSelectedActivity] = useState<LeadsongActivity | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   const fetchAnalytics = async () => {
     try {
@@ -58,6 +66,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
           id,
           created_at,
           stars,
+          attribute,
           property_id,
           property:property_id (
             name,
@@ -72,6 +81,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
       // Group ratings by Leadsong (same property_id and created_at within 2 seconds)
       const leadsongs = new Map<string, LeadsongActivity>();
       const leadsongStars: number[] = [];
+      const leadsongRatings = new Map<string, RatingDetail[]>();
 
       if (allRatings) {
         allRatings.forEach((rating: any) => {
@@ -87,10 +97,23 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
               property_address: property?.address || 'Unknown Address',
               property_id: rating.property_id,
               leadsong_time: rating.created_at,
+              ratings: [],
             });
+            leadsongRatings.set(leadsongKey, []);
           }
           
+          // Add rating detail to this leadsong
+          leadsongRatings.get(leadsongKey)?.push({
+            attribute: rating.attribute || 'unknown',
+            stars: rating.stars,
+          });
+          
           leadsongStars.push(rating.stars);
+        });
+        
+        // Attach ratings to each leadsong
+        leadsongs.forEach((leadsong, key) => {
+          leadsong.ratings = leadsongRatings.get(key) || [];
         });
       }
 
@@ -104,11 +127,12 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
         new Date(song.created_at) >= today
       ).length;
 
-      // Calculate Leadsongs this week
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      const leadsongsThisWeek = leadsongsArray.filter(song => 
-        new Date(song.created_at) >= weekAgo
+      // Calculate Leadsongs in the past 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+      const leadsongsThisMonth = leadsongsArray.filter(song => 
+        new Date(song.created_at) >= thirtyDaysAgo
       ).length;
 
       // Calculate average stars across all ratings
@@ -119,7 +143,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
       const analyticsData: AnalyticsData = {
         totalLeadsongs,
         leadsongsToday,
-        leadsongsThisWeek,
+        leadsongsThisMonth,
         averageStars: Math.round(averageStars * 100) / 100, // 2 decimal places
         recentActivity: leadsongsArray,
       };
@@ -207,8 +231,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
                 <Text style={styles.summaryLabel}>Leadsongs{'\n'}All-time</Text>
               </View>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryNumber}>{analytics.leadsongsThisWeek}</Text>
-                <Text style={styles.summaryLabel}>Leadsongs{'\n'}This Week</Text>
+                <Text style={styles.summaryNumber}>{analytics.leadsongsThisMonth}</Text>
+                <Text style={styles.summaryLabel}>Leadsongs{'\n'}Past 30 Days</Text>
               </View>
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryNumber}>{analytics.leadsongsToday}</Text>
@@ -224,13 +248,21 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
         ) : (
                 <>
                   {analytics.recentActivity.slice(0, displayLimit).map((activity, index) => (
-                    <View key={`${activity.id}-${index}`} style={styles.activityItem}>
+                    <TouchableOpacity 
+                      key={`${activity.id}-${index}`} 
+                      style={styles.activityItem}
+                      onPress={() => {
+                        setSelectedActivity(activity);
+                        setShowDetailsModal(true);
+                      }}
+                    >
               <Text style={styles.activityProperty}>{activity.property_name}</Text>
               <Text style={styles.activityAddress}>{activity.property_address}</Text>
               <Text style={styles.activityTime}>
                         {formatDate(activity.created_at)}
               </Text>
-            </View>
+                      <Text style={styles.tapToViewText}>Tap to view ratings</Text>
+            </TouchableOpacity>
                   ))}
                   
                   {hasMore && displayLimit < analytics.recentActivity.length && (
@@ -253,6 +285,63 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ visible, onClo
       <View style={styles.bottomPadding} />
     </ScrollView>
         )}
+        
+        {/* Rating Details Modal */}
+        <Modal
+          visible={showDetailsModal}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setShowDetailsModal(false)}
+        >
+          <View style={styles.detailsModalOverlay}>
+            <View style={styles.detailsModalContent}>
+              <View style={styles.detailsHeader}>
+                <Text style={styles.detailsTitle}>Rating Details</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowDetailsModal(false)}
+                  style={styles.detailsCloseButton}
+                >
+                  <Text style={styles.detailsCloseButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {selectedActivity && (
+                <>
+                  <Text style={styles.detailsPropertyName}>{selectedActivity.property_name}</Text>
+                  <Text style={styles.detailsPropertyAddress}>{selectedActivity.property_address}</Text>
+                  <Text style={styles.detailsDate}>{formatDate(selectedActivity.created_at)}</Text>
+                  
+                  <View style={styles.ratingsContainer}>
+                    {selectedActivity.ratings && selectedActivity.ratings.length > 0 ? (
+                      selectedActivity.ratings.map((rating, index) => (
+                        <View key={index} style={styles.ratingRow}>
+                          <Text style={styles.ratingAttribute}>
+                            {rating.attribute.charAt(0).toUpperCase() + rating.attribute.slice(1)}
+                          </Text>
+                          <View style={styles.starsContainer}>
+                            {[1, 2, 3, 4, 5].map((note) => (
+                              <Text 
+                                key={note} 
+                                style={[
+                                  styles.noteIcon,
+                                  note <= rating.stars && styles.selectedNoteIcon
+                                ]}
+                              >
+                                ♪
+                              </Text>
+                            ))}
+                          </View>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noRatingsText}>No rating details available</Text>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -390,6 +479,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   activityProperty: {
     fontSize: 16,
@@ -431,5 +522,112 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 20,
+  },
+  tapToViewText: {
+    fontSize: 11,
+    fontFamily: GlobalFonts.regular,
+    color: '#7C3AED',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  detailsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailsModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  detailsTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+  },
+  detailsCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsCloseButtonText: {
+    fontSize: 18,
+    color: '#666',
+    fontWeight: '600',
+  },
+  detailsPropertyName: {
+    fontSize: 18,
+    fontWeight: '600',
+    fontFamily: GlobalFonts.bold,
+    color: '#333',
+    marginBottom: 8,
+  },
+  detailsPropertyAddress: {
+    fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+    color: '#666',
+    marginBottom: 8,
+  },
+  detailsDate: {
+    fontSize: 13,
+    fontFamily: GlobalFonts.regular,
+    color: '#999',
+    marginBottom: 20,
+  },
+  ratingsContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    paddingTop: 16,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  ratingAttribute: {
+    fontSize: 16,
+    fontFamily: GlobalFonts.regular,
+    color: '#333',
+    flex: 1,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  noteIcon: {
+    fontSize: 24,
+    color: '#D1D5DB',
+  },
+  selectedNoteIcon: {
+    color: '#7C3AED',
+  },
+  noRatingsText: {
+    textAlign: 'center',
+    fontFamily: GlobalFonts.regular,
+    color: '#999',
+    fontStyle: 'italic',
+    paddingVertical: 20,
   },
 });

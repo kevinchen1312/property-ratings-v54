@@ -114,6 +114,24 @@
   font-style: italic;
 }
 
+.switchButton {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem;
+  text-align: center;
+  width: 100%;
+  transition: color 0.2s;
+}
+
+.switchButton:hover {
+  color: #764ba2;
+  text-decoration: underline;
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
   .card {

@@ -30,10 +30,11 @@ async function processRevenueSharing(
 ): Promise<void> {
   console.log(`💰 Processing revenue sharing for redemption ${redemptionId}, property ${propertyId}, revenue $${totalRevenue}`);
 
-  // Revenue split: 80% platform, 10% top contributor, 10% other contributors
-  const platformShare = totalRevenue * 0.80;
-  const topContributorShare = totalRevenue * 0.10;
-  const otherContributorsShare = totalRevenue * 0.10;
+  // Revenue split: 50% gold, 20% silver, 10% bronze, 20% platform
+  const platformShare = totalRevenue * 0.20;
+  const goldShare = totalRevenue * 0.50;
+  const silverShare = totalRevenue * 0.20;
+  const bronzeShare = totalRevenue * 0.10;
 
   // Get top contributor for this property in the past 30 days
   const { data: topContributorData, error: topContributorError } = await admin

@@ -27,6 +27,7 @@ export interface ContributorPayout {
 
 /**
  * Calculate and distribute revenue for a property purchase
+ * New distribution: 50% gold, 20% silver, 10% bronze, 20% platform
  */
 export async function calculateRevenueDistribution(
   purchaseId: string,
@@ -34,21 +35,23 @@ export async function calculateRevenueDistribution(
   totalRevenue: number
 ): Promise<RevenueDistribution> {
   
-  // Revenue split: 80% platform, 10% top contributor, 10% other contributors
-  const platformShare = totalRevenue * 0.80;
-  const topContributorShare = totalRevenue * 0.10;
-  const otherContributorsShare = totalRevenue * 0.10;
+  // Revenue split: 50% gold, 20% silver, 10% bronze, 20% platform
+  const goldShare = totalRevenue * 0.50;
+  const silverShare = totalRevenue * 0.20;
+  const bronzeShare = totalRevenue * 0.10;
+  const platformShare = totalRevenue * 0.20;
 
-  // Get top contributor for this property in the past month
-  const { data: topContributorData, error: topContributorError } = await supabase
-    .rpc('get_top_contributor', { property_uuid: propertyId });
+  // Get top 3 contributors for this property
+  const { data: topContributorsData, error: topContributorsError } = await supabase
+    .rpc('get_top_contributors', { property_uuid: propertyId });
 
-  if (topContributorError) {
-    console.error('Error getting top contributor:', topContributorError);
-    throw new Error('Failed to calculate top contributor');
+  if (topContributorsError) {
+    console.error('Error getting top contributors:', topContributorsError);
+    throw new Error('Failed to calculate top contributors');
   }
 
-  const topContributor = topContributorData?.[0];
+  const contributors = topContributorsData || [];
+  const goldContributor = contributors.find((c: any) => c.rank === 1);
 
   // Create revenue distribution record
   const revenueDistribution: RevenueDistribution = {
@@ -56,10 +59,10 @@ export async function calculateRevenueDistribution(
     property_id: propertyId,
     total_revenue: totalRevenue,
     platform_share: platformShare,
-    top_contributor_share: topContributorShare,
-    other_contributors_share: otherContributorsShare,
-    top_contributor_id: topContributor?.user_id,
-    top_contributor_rating_count: topContributor?.rating_count || 0,
+    top_contributor_share: goldShare,
+    other_contributors_share: silverShare + bronzeShare,
+    top_contributor_id: goldContributor?.user_id,
+    top_contributor_rating_count: goldContributor?.rating_count || 0,
   };
 
   // Save to database
@@ -79,6 +82,7 @@ export async function calculateRevenueDistribution(
 
 /**
  * Calculate individual contributor payouts for a property
+ * New distribution: 50% gold, 20% silver, 10% bronze
  */
 export async function calculateContributorPayouts(
   revenueDistributionId: string,
@@ -88,62 +92,52 @@ export async function calculateContributorPayouts(
   topContributorId?: string
 ): Promise<ContributorPayout[]> {
   
-  // Get rating counts for each contributor (excluding top contributor)
   const contributorPayouts: ContributorPayout[] = [];
 
-  // Add top contributor payout (they get exactly 10%)
-  if (topContributorId) {
-    // Get the actual rating count for top contributor from the function result
-    const { data: topContributorData } = await supabase
-      .rpc('get_top_contributor', { property_uuid: propertyId });
-    
-    const topContributorRatingCount = topContributorData?.[0]?.rating_count || 0;
-    
+  // Get top 3 contributors
+  const { data: topContributorsData, error: topContributorsError } = await supabase
+    .rpc('get_top_contributors', { property_uuid: propertyId });
+
+  if (topContributorsError) {
+    console.error('Error getting top contributors:', topContributorsError);
+    throw new Error('Failed to get top contributors');
+  }
+
+  const contributors = topContributorsData || [];
+  const goldContributor = contributors.find((c: any) => c.rank === 1);
+  const silverContributor = contributors.find((c: any) => c.rank === 2);
+  const bronzeContributor = contributors.find((c: any) => c.rank === 3);
+
+  // Add gold contributor payout (50% of total revenue)
+  if (goldContributor) {
     contributorPayouts.push({
-      user_id: topContributorId,
-      payout_amount: topContributorShare,
-      rating_count: topContributorRatingCount,
+      user_id: goldContributor.user_id,
+      payout_amount: topContributorShare, // This is 50%
+      rating_count: goldContributor.rating_count,
       is_top_contributor: true,
     });
   }
 
-  // Get all other contributors (excluding the top contributor) with their rating counts
-  const { data: otherContributorsData, error: otherContributorsError } = await supabase
-    .from('rating')
-    .select('user_id')
-    .eq('property_id', propertyId)
-    .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())
-    .not('user_id', 'eq', topContributorId || '');
-
-  if (otherContributorsError) {
-    console.error('Error getting other contributors:', otherContributorsError);
-    throw new Error('Failed to get other contributors');
+  // Add silver contributor payout (20% of total revenue)
+  if (silverContributor) {
+    const silverShare = topContributorShare * 0.40; // 20% of total = 40% of topContributorShare (which is 50%)
+    contributorPayouts.push({
+      user_id: silverContributor.user_id,
+      payout_amount: silverShare,
+      rating_count: silverContributor.rating_count,
+      is_top_contributor: false,
+    });
   }
 
-  if (otherContributorsData && otherContributorsData.length > 0) {
-    // Group by user and count ratings for other contributors
-    const userRatingCounts: { [key: string]: number } = {};
-    otherContributorsData.forEach(rating => {
-      userRatingCounts[rating.user_id] = (userRatingCounts[rating.user_id] || 0) + 1;
+  // Add bronze contributor payout (10% of total revenue)
+  if (bronzeContributor) {
+    const bronzeShare = topContributorShare * 0.20; // 10% of total = 20% of topContributorShare (which is 50%)
+    contributorPayouts.push({
+      user_id: bronzeContributor.user_id,
+      payout_amount: bronzeShare,
+      rating_count: bronzeContributor.rating_count,
+      is_top_contributor: false,
     });
-
-    // Calculate total ratings from other contributors
-    const totalOtherRatings = Object.values(userRatingCounts).reduce((sum, count) => sum + count, 0);
-
-    // Calculate proportional payouts for other contributors
-    if (totalOtherRatings > 0) {
-      Object.entries(userRatingCounts).forEach(([userId, ratingCount]) => {
-        const proportion = ratingCount / totalOtherRatings;
-        const payoutAmount = otherContributorsShare * proportion;
-
-        contributorPayouts.push({
-          user_id: userId,
-          payout_amount: payoutAmount,
-          rating_count: ratingCount,
-          is_top_contributor: false,
-        });
-      });
-    }
   }
 
   // Save contributor payouts to database

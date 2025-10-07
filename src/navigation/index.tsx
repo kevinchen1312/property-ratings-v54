@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StyleSheet, AppState } from 'react-native';
 import { MapScreen } from '../screens/MapScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
 import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
 import { PurchaseSuccessScreen } from '../screens/PurchaseSuccessScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
+import { CreditsScreen } from '../screens/CreditsScreen';
 import { getInitialSession, onAuthStateChange } from '../lib/auth';
 import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
@@ -23,6 +24,8 @@ export type RootStackParamList = {
   PurchaseSuccess: {
     session_id?: string;
   };
+  Profile: undefined;
+  Credits: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -30,7 +33,6 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [autoOrientEnabled, setAutoOrientEnabled] = useState(true); // Default to ON
 
   useEffect(() => {
     // Get initial session
@@ -44,22 +46,23 @@ export const RootNavigator: React.FC = () => {
       setSession(session);
     });
 
-    // Load auto-orient setting
-    loadAutoOrientSetting();
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const loadAutoOrientSetting = async () => {
-    try {
-      const value = await AsyncStorage.getItem('autoOrientEnabled');
-      if (value !== null) {
-        setAutoOrientEnabled(value === 'true');
+    // Restore session when app comes to foreground (after returning from browser)
+    const appStateListener = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('App came to foreground, restoring session...');
+        const restoredSession = await getInitialSession();
+        if (restoredSession) {
+          setSession(restoredSession);
+          console.log('✅ Session restored');
+        }
       }
-    } catch (error) {
-      // Silently handle - use default value
-    }
-  };
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateListener.remove();
+    };
+  }, []);
 
   if (loading) {
     return <Loading />;
@@ -72,12 +75,11 @@ export const RootNavigator: React.FC = () => {
         <>
           <Stack.Screen
             name="Map"
+            component={MapScreen}
             options={{
               headerShown: false,
             }}
-          >
-            {(props) => <MapScreen {...props} autoOrientEnabled={autoOrientEnabled} />}
-          </Stack.Screen>
+          />
           <Stack.Screen
             name="ReportPreview"
             component={ReportPreviewScreen}
@@ -98,6 +100,28 @@ export const RootNavigator: React.FC = () => {
             component={PurchaseSuccessScreen}
             options={{
               headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="Profile"
+            component={ProfileScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="Credits"
+            component={CreditsScreen}
+            options={{
+              title: 'My Credits',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
+              },
             }}
           />
         </>

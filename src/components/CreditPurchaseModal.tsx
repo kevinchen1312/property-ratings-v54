@@ -177,7 +177,7 @@ export const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
           <View style={styles.infoContainer}>
             <Text style={styles.infoTitle}>💡 How it works:</Text>
             <Text style={styles.infoText}>
-              • Each property report costs 1 credit (normally $10){'\n'}
+              • Property reports cost 1-4 credits based on the amount of ratings{'\n'}
               • Buy in bulk to save money{'\n'}
               • Credits never expire{'\n'}
               • Secure payment via Stripe{'\n'}

@@ -48,9 +48,9 @@ export const deepLinkConfig = {
  */
 export const STRIPE_PRICE_IDS = {
   '1': process.env.STRIPE_PRICE_1_CREDIT || 'price_1CREDIT',
-  '5': process.env.STRIPE_PRICE_5_CREDITS || 'price_5CREDITS',
   '10': process.env.STRIPE_PRICE_10_CREDITS || 'price_10CREDITS',
-  '25': process.env.STRIPE_PRICE_25_CREDITS || 'price_25CREDITS',
+  '20': process.env.STRIPE_PRICE_20_CREDITS || 'price_20CREDITS',
+  '50': process.env.STRIPE_PRICE_50_CREDITS || 'price_50CREDITS',
 } as const;
 
 export type PackageKey = keyof typeof STRIPE_PRICE_IDS;
@@ -71,26 +71,26 @@ export const CREDIT_PACKAGES: Record<
 > = {
   '1': {
     credits: 1,
-    price: 10.00,
-    pricePerCredit: 10.00,
-  },
-  '5': {
-    credits: 5,
-    price: 45.00,
-    pricePerCredit: 9.00,
-    savings: '$5 off',
+    price: 5.00,
+    pricePerCredit: 5.00,
   },
   '10': {
     credits: 10,
-    price: 80.00,
-    pricePerCredit: 8.00,
+    price: 45.00,
+    pricePerCredit: 4.50,
     popular: true,
+    savings: '$5 off',
+  },
+  '20': {
+    credits: 20,
+    price: 80.00,
+    pricePerCredit: 4.00,
     savings: '$20 off',
   },
-  '25': {
-    credits: 25,
+  '50': {
+    credits: 50,
     price: 175.00,
-    pricePerCredit: 7.00,
+    pricePerCredit: 3.50,
     savings: '$75 off',
   },
 };

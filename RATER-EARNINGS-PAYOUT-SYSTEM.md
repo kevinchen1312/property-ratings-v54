@@ -9,10 +9,11 @@ Your app has a **FULLY FUNCTIONAL** revenue sharing and payout system! Here's wh
 - Stats are stored in the `property_contributors` table
 
 ### 2️⃣ **When Someone Buys a Report**
-- Revenue is split: **80% platform, 10% top contributor, 10% other contributors**
-- **Top Contributor** = person with most ratings for that property in past 30 days
-- The system creates **pending payout** records for each contributor
-- Payouts are proportional to contribution (more ratings = bigger share)
+- Revenue is split: **50% gold, 20% silver, 10% bronze, 20% platform**
+- **Gold Contributor (🥇)** = person with most ratings for that property (rank 1)
+- **Silver Contributor (🥈)** = person with 2nd most ratings (rank 2)
+- **Bronze Contributor (🥉)** = person with 3rd most ratings (rank 3)
+- The system creates **pending payout** records for top 3 contributors only
 
 ### 3️⃣ **When Raters Want Their Money**
 - They open the **Earnings Screen** in the app
@@ -155,17 +156,18 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 ### Scenario:
 - Property report sells for **$10.00**
-- **Alice** has rated it 15 times (top contributor)
-- **Bob** has rated it 10 times
-- **Carol** has rated it 5 times
+- **Alice** has rated it 15 times (🥇 gold - rank 1)
+- **Bob** has rated it 10 times (🥈 silver - rank 2)
+- **Carol** has rated it 5 times (🥉 bronze - rank 3)
+- **Dave** has rated it 3 times (rank 4 - no payout)
 
 ### Distribution:
 ```
-Platform:          $8.00  (80%)
-Alice (Top):       $1.00  (10%)
-Bob + Carol:       $1.00  (10% split proportionally)
-  - Bob:           $0.67  (10 / 15 = 66.7% of $1.00)
-  - Carol:         $0.33  (5 / 15 = 33.3% of $1.00)
+Alice (🥇 Gold):   $5.00  (50%)
+Bob (🥈 Silver):   $2.00  (20%)
+Carol (🥉 Bronze): $1.00  (10%)
+Platform:          $2.00  (20%)
+Dave (Rank 4):     $0.00  (0% - only top 3 get paid)
 ```
 
 ---

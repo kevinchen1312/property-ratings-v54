@@ -8,6 +8,7 @@ import {
   ScrollView,
   Share,
   Alert,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { GlobalFonts } from '../styles/global';
@@ -62,13 +63,20 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({ visible, onClose }
   const handleShare = async () => {
     try {
       const referralUrl = `https://leadsong.com/referral/${referralCode}`;
-      const message = `Join me on Leadsong! Use my referral code ${referralCode} to get started.\n\n${referralUrl}`;
+      
+      // iOS handles url separately, Android includes it in message
+      const shareContent = Platform.OS === 'ios' 
+        ? {
+            message: `Join me on Leadsong! Use my referral code ${referralCode} to get started.`,
+            url: referralUrl,
+            title: 'Join Leadsong',
+          }
+        : {
+            message: `Join me on Leadsong! Use my referral code ${referralCode} to get started.\n\n${referralUrl}`,
+            title: 'Join Leadsong',
+          };
 
-      const result = await Share.share({
-        message: message,
-        url: referralUrl, // For iOS
-        title: 'Join Leadsong',
-      });
+      const result = await Share.share(shareContent);
 
       if (result.action === Share.sharedAction) {
         if (result.activityType) {

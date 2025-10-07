@@ -20,6 +20,7 @@ export const AuthScreen: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -69,7 +70,7 @@ export const AuthScreen: React.FC = () => {
     setLoading(true);
     try {
       if (isSignUp) {
-        const { data, error } = await signUp(email, password, firstName, lastName);
+        const { data, error } = await signUp(email, password, firstName, lastName, referralCode || undefined);
         if (error) {
           Alert.alert('Sign Up Error', error.message);
         } else {
@@ -100,6 +101,7 @@ export const AuthScreen: React.FC = () => {
     setConfirmPassword('');
     setFirstName('');
     setLastName('');
+    setReferralCode('');
     setShowPassword(false);
     setShowConfirmPassword(false);
   };
@@ -148,6 +150,25 @@ export const AuthScreen: React.FC = () => {
                 />
               </View>
             </>
+          )}
+
+          {isSignUp && (
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Referral Code (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={referralCode}
+                onChangeText={(text) => setReferralCode(text.toUpperCase())}
+                placeholder="Enter referral code if you have one"
+                placeholderTextColor="#999"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                editable={!loading}
+              />
+              <Text style={styles.hint}>
+                Have a friend's referral code? Both of you will get bonus credits!
+              </Text>
+            </View>
           )}
 
           <View style={styles.inputContainer}>
@@ -381,6 +402,12 @@ const styles = StyleSheet.create({
   switchButtonText: {
     color: '#007AFF',
     fontSize: 14,
+    fontFamily: GlobalFonts.regular,
+  },
+  hint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
     fontFamily: GlobalFonts.regular,
   },
 });

@@ -10,6 +10,7 @@ A new feature that automatically rotates the map to match your device's facing d
 - Open the app and tap the **⚙️ Settings** button in the top-right
 - You'll see a new option: **🧭 Auto-Orient Map**
 - Toggle it ON (green) or OFF (gray)
+- The setting takes effect **immediately** - no restart required
 - Your preference is saved and persists across app sessions
 
 ### Auto-Orientation Behavior
@@ -35,15 +36,12 @@ A new feature that automatically rotates the map to match your device's facing d
 
 ### Files Modified
 
-1. **`src/navigation/index.tsx`**
+1. **`src/screens/MapScreen.tsx`**
    - Added `autoOrientEnabled` state (default: `true`)
-   - Added AsyncStorage to persist user preference
-   - Added toggle switch in settings modal
-   - Pass `autoOrientEnabled` prop to MapScreen
-
-2. **`src/screens/MapScreen.tsx`**
-   - Accept `autoOrientEnabled` prop
-   - Pass it down to ClusteredMapView
+   - Load setting from AsyncStorage on mount
+   - Added toggle switch in settings modal that updates immediately
+   - Pass `autoOrientEnabled` to ClusteredMapView
+   - State changes trigger instant re-render with new setting
 
 3. **`src/components/ClusteredMapView.tsx`**
    - Accept `autoOrientEnabled` prop
@@ -58,10 +56,11 @@ A new feature that automatically rotates the map to match your device's facing d
 ## Testing Checklist
 
 - [ ] Open settings and verify toggle is visible
-- [ ] Toggle auto-orient ON - map should rotate as you turn your device
+- [ ] Toggle auto-orient ON - map should rotate as you turn your device **immediately**
+- [ ] Toggle auto-orient OFF while device is moving - map should stop rotating **immediately**
+- [ ] Toggle it back ON - rotation should resume **immediately without restart**
 - [ ] Manually rotate the map - auto-rotation should **permanently stop**
 - [ ] Press the 📍 center button - auto-rotation should resume and map should recenter
-- [ ] Toggle auto-orient OFF - map should stop rotating automatically
 - [ ] Close and reopen the app - setting should be remembered
 - [ ] Verify performance is smooth (no lag or jitter)
 - [ ] Verify center button is visible and positioned correctly (bottom-right)

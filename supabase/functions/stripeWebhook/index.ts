@@ -150,37 +150,85 @@ serve(async (req) => {
 
       if (creditPurchase) {
         // Handle credit purchase
-        console.log('Processing credit purchase:', creditPurchase.id);
-        console.log('Purchase status:', creditPurchase.status);
+        console.log('🛒 Processing credit purchase:', {
+          id: creditPurchase.id,
+          user_id: creditPurchase.user_id,
+          credits: creditPurchase.credits,
+          status: creditPurchase.status,
+          session_id: session.id
+        });
         
         // If already completed, return success (idempotency)
         if (creditPurchase.status === 'completed') {
-          console.log('Purchase already completed, returning success');
+          console.log('✅ Purchase already completed, returning success');
           return new Response('Credit purchase already completed', { status: 200 });
         }
         
-        const { data: result, error: creditError } = await supabase.rpc('complete_credit_purchase', {
-          p_stripe_session_id: session.id
-        });
+        try {
+          const { data: result, error: creditError } = await supabase.rpc('complete_credit_purchase', {
+            p_stripe_session_id: session.id
+          });
 
-        if (creditError || !result) {
-          console.error('Failed to complete credit purchase:', creditError);
-          console.error('RPC result:', result);
-          
-          // Return 200 anyway to prevent Stripe from retrying
-          // We'll investigate the failure separately
-          return new Response(JSON.stringify({ 
-            error: 'Failed to process credit purchase',
-            details: creditError?.message || 'RPC returned false',
-            session_id: session.id
+          if (creditError) {
+            console.error('❌ Failed to complete credit purchase:', {
+              error: creditError,
+              message: creditError.message,
+              details: creditError.details,
+              hint: creditError.hint,
+              code: creditError.code
+            });
+            
+            // Return 500 to let Stripe retry (it will retry with exponential backoff)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to process credit purchase',
+              details: creditError.message,
+              session_id: session.id,
+              will_retry: true
+            }), { 
+              status: 500, // Return 500 so Stripe will retry
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+
+          if (!result) {
+            console.error('⚠️ RPC returned false');
+            
+            // Return 500 to let Stripe retry
+            return new Response(JSON.stringify({ 
+              error: 'Failed to process credit purchase',
+              details: 'RPC returned false',
+              session_id: session.id,
+              will_retry: true
+            }), { 
+              status: 500, // Return 500 so Stripe will retry
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+
+          console.log(`✅ Successfully added ${creditPurchase.credits} credits to user ${creditPurchase.user_id}`);
+          return new Response(JSON.stringify({
+            success: true,
+            message: 'Credit purchase completed',
+            credits: creditPurchase.credits,
+            user_id: creditPurchase.user_id
           }), { 
-            status: 200, // Return 200 to acknowledge receipt
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } catch (err) {
+          console.error('❌ Exception processing credit purchase:', err);
+          
+          // Return 500 to let Stripe retry
+          return new Response(JSON.stringify({ 
+            error: 'Exception processing credit purchase',
+            details: err.message,
+            session_id: session.id,
+            will_retry: true
+          }), { 
+            status: 500,
             headers: { 'Content-Type': 'application/json' }
           });
         }
-
-        console.log(`Successfully added ${creditPurchase.credits} credits to user ${creditPurchase.user_id}`);
-        return new Response('Credit purchase completed', { status: 200 });
       }
 
       // Handle property report purchase (existing logic)
@@ -239,23 +287,30 @@ serve(async (req) => {
         try {
           console.log(`Processing revenue sharing for property: ${item.property_id}`);
           
-          // Calculate revenue sharing
+          // Calculate revenue sharing: 50% gold, 20% silver, 10% bronze, 20% platform
           const totalRevenue = item.unit_price;
-          const platformShare = totalRevenue * 0.80;
-          const topContributorShare = totalRevenue * 0.10;
-          const otherContributorsShare = totalRevenue * 0.10;
+          const goldShare = totalRevenue * 0.50;
+          const silverShare = totalRevenue * 0.20;
+          const bronzeShare = totalRevenue * 0.10;
+          const platformShare = totalRevenue * 0.20;
 
-          // Get top contributor for this property
-          const { data: topContributorData, error: topContributorError } = await supabase
-            .rpc('get_top_contributor', { property_uuid: item.property_id });
+          // Get top 3 contributors for this property
+          const { data: topContributorsData, error: topContributorsError } = await supabase
+            .rpc('get_top_contributors', { property_uuid: item.property_id });
 
-          if (topContributorError) {
-            console.error('Error getting top contributor:', topContributorError);
+          if (topContributorsError) {
+            console.error('Error getting top contributors:', topContributorsError);
             continue; // Skip this property but continue with others
           }
 
-          const topContributor = topContributorData?.[0];
-          console.log('Top contributor:', topContributor);
+          const contributors = topContributorsData || [];
+          const goldContributor = contributors.find((c: any) => c.rank === 1);
+          const silverContributor = contributors.find((c: any) => c.rank === 2);
+          const bronzeContributor = contributors.find((c: any) => c.rank === 3);
+
+          console.log(`🥇 Gold contributor: ${goldContributor?.user_id} with ${goldContributor?.rating_count || 0} ratings`);
+          console.log(`🥈 Silver contributor: ${silverContributor?.user_id} with ${silverContributor?.rating_count || 0} ratings`);
+          console.log(`🥉 Bronze contributor: ${bronzeContributor?.user_id} with ${bronzeContributor?.rating_count || 0} ratings`);
 
           // Create revenue distribution record
           const { data: revenueDistribution, error: revenueError } = await supabase
@@ -265,10 +320,10 @@ serve(async (req) => {
               property_id: item.property_id,
               total_revenue: totalRevenue,
               platform_share: platformShare,
-              top_contributor_share: topContributorShare,
-              other_contributors_share: otherContributorsShare,
-              top_contributor_id: topContributor?.user_id,
-              top_contributor_rating_count: topContributor?.rating_count || 0,
+              top_contributor_share: goldShare,
+              other_contributors_share: silverShare + bronzeShare,
+              top_contributor_id: goldContributor?.user_id,
+              top_contributor_rating_count: goldContributor?.rating_count || 0,
             })
             .select()
             .single();
@@ -283,51 +338,40 @@ serve(async (req) => {
           // Create contributor payouts
           const contributorPayouts = [];
 
-          // Add top contributor payout
-          if (topContributor?.user_id) {
+          // Add gold contributor payout (50%)
+          if (goldContributor?.user_id) {
             contributorPayouts.push({
               revenue_distribution_id: revenueDistribution.id,
-              user_id: topContributor.user_id,
-              payout_amount: topContributorShare,
-              rating_count: topContributor.rating_count,
+              user_id: goldContributor.user_id,
+              payout_amount: goldShare,
+              rating_count: goldContributor.rating_count,
               is_top_contributor: true,
               status: 'pending',
             });
           }
 
-          // Get other contributors (excluding top contributor)
-          const { data: otherRatings, error: otherRatingsError } = await supabase
-            .from('rating')
-            .select('user_id')
-            .eq('property_id', item.property_id)
-            .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())
-            .not('user_id', 'eq', topContributor?.user_id || '');
-
-          if (!otherRatingsError && otherRatings && otherRatings.length > 0) {
-            // Count ratings per user
-            const userRatingCounts: { [key: string]: number } = {};
-            otherRatings.forEach(rating => {
-              userRatingCounts[rating.user_id] = (userRatingCounts[rating.user_id] || 0) + 1;
+          // Add silver contributor payout (20%)
+          if (silverContributor?.user_id) {
+            contributorPayouts.push({
+              revenue_distribution_id: revenueDistribution.id,
+              user_id: silverContributor.user_id,
+              payout_amount: silverShare,
+              rating_count: silverContributor.rating_count,
+              is_top_contributor: false,
+              status: 'pending',
             });
+          }
 
-            const totalOtherRatings = Object.values(userRatingCounts).reduce((sum, count) => sum + count, 0);
-
-            // Create payouts for other contributors
-            if (totalOtherRatings > 0) {
-              Object.entries(userRatingCounts).forEach(([userId, ratingCount]) => {
-                const proportion = ratingCount / totalOtherRatings;
-                const payoutAmount = otherContributorsShare * proportion;
-
-                contributorPayouts.push({
-                  revenue_distribution_id: revenueDistribution.id,
-                  user_id: userId,
-                  payout_amount: payoutAmount,
-                  rating_count: ratingCount,
-                  is_top_contributor: false,
-                  status: 'pending',
-                });
-              });
-            }
+          // Add bronze contributor payout (10%)
+          if (bronzeContributor?.user_id) {
+            contributorPayouts.push({
+              revenue_distribution_id: revenueDistribution.id,
+              user_id: bronzeContributor.user_id,
+              payout_amount: bronzeShare,
+              rating_count: bronzeContributor.rating_count,
+              is_top_contributor: false,
+              status: 'pending',
+            });
           }
 
           // Insert all contributor payouts
@@ -340,8 +384,9 @@ serve(async (req) => {
               console.error('Error creating contributor payouts:', payoutError);
             } else {
               console.log(`Created ${contributorPayouts.length} contributor payouts`);
-              contributorPayouts.forEach(payout => {
-                console.log(`  - $${payout.payout_amount.toFixed(2)} to ${payout.user_id.substring(0, 8)} (${payout.is_top_contributor ? 'top' : 'other'})`);
+              const rankLabels = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'];
+              contributorPayouts.forEach((payout, idx) => {
+                console.log(`  - $${payout.payout_amount.toFixed(2)} to ${payout.user_id.substring(0, 8)} ${rankLabels[idx] || ''}`);
               });
             }
           }

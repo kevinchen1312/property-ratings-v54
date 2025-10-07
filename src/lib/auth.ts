@@ -21,7 +21,13 @@ export function onAuthStateChange(callback: (session: Session | null) => void) {
   });
 }
 
-export async function signUp(email: string, password: string, firstName: string, lastName: string) {
+export async function signUp(
+  email: string, 
+  password: string, 
+  firstName: string, 
+  lastName: string,
+  referralCode?: string
+) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -30,6 +36,7 @@ export async function signUp(email: string, password: string, firstName: string,
         first_name: firstName,
         last_name: lastName,
         full_name: `${firstName} ${lastName}`,
+        incoming_referral_code: referralCode || null,
       },
     },
   });
@@ -47,4 +54,17 @@ export async function signIn(email: string, password: string) {
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   return { error };
+}
+
+export async function getCurrentUser() {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+export async function requireAuth() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Authentication required');
+  }
+  return user;
 }

@@ -1,46 +1,122 @@
 // supabase/functions/redeemReports/index.ts
+// Updated to call Vercel PDF service instead of running Puppeteer in Deno
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_EMAIL = Deno.env.get("REPORTS_FROM_EMAIL") || "reports@yourdomain.com";
+const PDF_SERVICE_URL = Deno.env.get("PDF_SERVICE_URL")!; // Your Vercel URL
 
-// Revenue per credit (standard value regardless of package price)
-const REVENUE_PER_CREDIT = 10.00;
+// Revenue per credit based on submission tiers
+// <100 submissions: 1 credit = $5
+// 100-999 submissions: 2 credits = $10
+// 1000+ submissions: 4 credits = $20
+const REVENUE_PER_CREDIT_BASE = 5.00;
+
+function calculateCreditsRequired(submissionCount: number): number {
+  if (submissionCount < 100) return 1;
+  if (submissionCount < 1000) return 2;
+  return 4;
+}
+
+function calculateRevenue(creditsRequired: number): number {
+  return creditsRequired * REVENUE_PER_CREDIT_BASE;
+}
 
 interface ContributorPayout {
   user_id: string;
   payout_amount: number;
   rating_count: number;
-  is_top_contributor: boolean;
+  rank: number; // 1=gold, 2=silver, 3=bronze
 }
 
-// Helper function to clean text for PDF (remove emojis and special characters)
-const cleanText = (text: any): string => {
-  if (!text) return '';
-  return String(text)
-    .replace(/⭐/g, 'star')
-    .replace(/★/g, 'star')
-    .replace(/☆/g, 'star')
-    .replace(/✨/g, 'sparkle')
-    .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
-    .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
-    .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
-    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '')
-    .replace(/[\u{2600}-\u{26FF}]/gu, '')
-    .replace(/[\u{2700}-\u{27BF}]/gu, '')
-    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
-    .replace(/[\u{1F900}-\u{1F9FF}]/gu, '')
-    .replace(/[\u{1FA70}-\u{1FAFF}]/gu, '')
-    .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
-    .replace(/[^\x00-\x7F\u00A0-\u00FF\u0100-\u017F\u0180-\u024F]/g, '')
-    .trim();
-};
+interface RatingData {
+  attribute: string;
+  stars: number;
+  created_at: string;
+  user_id?: string;
+  user_hash?: string;
+}
+
+function mapAttribute(attr: string): string {
+  const mapping: Record<string, string> = {
+    'noise': 'Quietness',
+    'quietness': 'Quietness',
+    'cleanliness': 'Cleanliness',
+    'safety': 'Safety',
+    'friendliness': 'Safety'
+  };
+  return mapping[attr.toLowerCase()] || attr;
+}
+
+function calculateDailyTrends(ratings: RatingData[]) {
+  const grouped: Record<string, Record<string, number[]>> = {};
+  
+  ratings.forEach(r => {
+    const date = new Date(r.created_at).toISOString().split('T')[0];
+    if (!grouped[date]) grouped[date] = {};
+    const attr = mapAttribute(r.attribute);
+    if (!grouped[date][attr]) grouped[date][attr] = [];
+    grouped[date][attr].push(r.stars);
+  });
+  
+  const result = { quietness: [] as any[], cleanliness: [] as any[], safety: [] as any[] };
+  
+  Object.keys(grouped).sort().forEach(date => {
+    if (grouped[date]['Quietness']) {
+      const avg = grouped[date]['Quietness'].reduce((a, b) => a + b, 0) / grouped[date]['Quietness'].length;
+      result.quietness.push({ date, avg });
+    }
+    if (grouped[date]['Cleanliness']) {
+      const avg = grouped[date]['Cleanliness'].reduce((a, b) => a + b, 0) / grouped[date]['Cleanliness'].length;
+      result.cleanliness.push({ date, avg });
+    }
+    if (grouped[date]['Safety']) {
+      const avg = grouped[date]['Safety'].reduce((a, b) => a + b, 0) / grouped[date]['Safety'].length;
+      result.safety.push({ date, avg });
+    }
+  });
+  
+  return result;
+}
+
+function calculateHourlyTrends(ratings: RatingData[]) {
+  const grouped: Record<number, Record<string, number[]>> = {};
+  
+  ratings.forEach(r => {
+    const hour = new Date(r.created_at).getHours();
+    if (!grouped[hour]) grouped[hour] = {};
+    const attr = mapAttribute(r.attribute);
+    if (!grouped[hour][attr]) grouped[hour][attr] = [];
+    grouped[hour][attr].push(r.stars);
+  });
+  
+  const result = { quietness: [] as any[], cleanliness: [] as any[], safety: [] as any[] };
+  
+  for (let hour = 0; hour < 24; hour++) {
+    if (grouped[hour]) {
+      if (grouped[hour]['Quietness']) {
+        const avg = grouped[hour]['Quietness'].reduce((a, b) => a + b, 0) / grouped[hour]['Quietness'].length;
+        result.quietness.push({ hour, avg });
+      }
+      if (grouped[hour]['Cleanliness']) {
+        const avg = grouped[hour]['Cleanliness'].reduce((a, b) => a + b, 0) / grouped[hour]['Cleanliness'].length;
+        result.cleanliness.push({ hour, avg });
+      }
+      if (grouped[hour]['Safety']) {
+        const avg = grouped[hour]['Safety'].reduce((a, b) => a + b, 0) / grouped[hour]['Safety'].length;
+        result.safety.push({ hour, avg });
+      }
+    }
+  }
+  
+  return result;
+}
 
 /**
  * Process revenue sharing for a property redemption
+ * New distribution: 50% gold, 20% silver, 10% bronze, 20% platform
  */
 async function processRevenueSharing(
   admin: any,
@@ -50,20 +126,29 @@ async function processRevenueSharing(
 ): Promise<void> {
   console.log(`💰 Processing revenue sharing for redemption ${redemptionId}, property ${propertyId}, revenue $${totalRevenue}`);
 
-  const platformShare = totalRevenue * 0.80;
-  const topContributorShare = totalRevenue * 0.10;
-  const otherContributorsShare = totalRevenue * 0.10;
+  // New revenue distribution: 50% gold, 20% silver, 10% bronze, 20% platform
+  const goldShare = totalRevenue * 0.50;
+  const silverShare = totalRevenue * 0.20;
+  const bronzeShare = totalRevenue * 0.10;
+  const platformShare = totalRevenue * 0.20;
 
-  const { data: topContributorData, error: topContributorError } = await admin
-    .rpc('get_top_contributor', { property_uuid: propertyId });
+  // Get top 3 contributors
+  const { data: topContributorsData, error: topContributorsError } = await admin
+    .rpc('get_top_contributors', { property_uuid: propertyId });
 
-  if (topContributorError) {
-    console.error('Error getting top contributor:', topContributorError);
-    throw new Error('Failed to calculate top contributor');
+  if (topContributorsError) {
+    console.error('Error getting top contributors:', topContributorsError);
+    throw new Error('Failed to calculate top contributors');
   }
 
-  const topContributor = topContributorData?.[0];
-  console.log(`👑 Top contributor: ${topContributor?.user_id} with ${topContributor?.rating_count || 0} ratings`);
+  const contributors = topContributorsData || [];
+  const goldContributor = contributors.find((c: any) => c.rank === 1);
+  const silverContributor = contributors.find((c: any) => c.rank === 2);
+  const bronzeContributor = contributors.find((c: any) => c.rank === 3);
+
+  console.log(`🥇 Gold contributor: ${goldContributor?.user_id} with ${goldContributor?.rating_count || 0} ratings`);
+  console.log(`🥈 Silver contributor: ${silverContributor?.user_id} with ${silverContributor?.rating_count || 0} ratings`);
+  console.log(`🥉 Bronze contributor: ${bronzeContributor?.user_id} with ${bronzeContributor?.rating_count || 0} ratings`);
 
   const { data: revenueDistribution, error: distError } = await admin
     .from('revenue_distribution')
@@ -72,10 +157,10 @@ async function processRevenueSharing(
       property_id: propertyId,
       total_revenue: totalRevenue,
       platform_share: platformShare,
-      top_contributor_share: topContributorShare,
-      other_contributors_share: otherContributorsShare,
-      top_contributor_id: topContributor?.user_id,
-      top_contributor_rating_count: topContributor?.rating_count || 0,
+      top_contributor_share: goldShare,
+      other_contributors_share: silverShare + bronzeShare,
+      top_contributor_id: goldContributor?.user_id,
+      top_contributor_rating_count: goldContributor?.rating_count || 0,
     })
     .select()
     .single();
@@ -89,50 +174,34 @@ async function processRevenueSharing(
 
   const contributorPayouts: ContributorPayout[] = [];
 
-  if (topContributor?.user_id) {
+  // Add gold contributor payout (50%)
+  if (goldContributor?.user_id) {
     contributorPayouts.push({
-      user_id: topContributor.user_id,
-      payout_amount: topContributorShare,
-      rating_count: topContributor.rating_count || 0,
-      is_top_contributor: true,
+      user_id: goldContributor.user_id,
+      payout_amount: goldShare,
+      rating_count: goldContributor.rating_count || 0,
+      rank: 1,
     });
   }
 
-  const { data: otherContributorsData, error: otherContributorsError } = await admin
-    .from('rating')
-    .select('user_id')
-    .eq('property_id', propertyId)
-    .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString());
-
-  if (otherContributorsError) {
-    console.error('Error getting other contributors:', otherContributorsError);
-    throw new Error('Failed to get other contributors');
+  // Add silver contributor payout (20%)
+  if (silverContributor?.user_id) {
+    contributorPayouts.push({
+      user_id: silverContributor.user_id,
+      payout_amount: silverShare,
+      rating_count: silverContributor.rating_count || 0,
+      rank: 2,
+    });
   }
 
-  if (otherContributorsData && otherContributorsData.length > 0) {
-    const userRatingCounts: { [key: string]: number } = {};
-    otherContributorsData.forEach((rating: any) => {
-      if (rating.user_id !== topContributor?.user_id) {
-        userRatingCounts[rating.user_id] = (userRatingCounts[rating.user_id] || 0) + 1;
-      }
+  // Add bronze contributor payout (10%)
+  if (bronzeContributor?.user_id) {
+    contributorPayouts.push({
+      user_id: bronzeContributor.user_id,
+      payout_amount: bronzeShare,
+      rating_count: bronzeContributor.rating_count || 0,
+      rank: 3,
     });
-
-    const totalOtherRatings = Object.values(userRatingCounts).reduce((sum, count) => sum + count, 0);
-    console.log(`👥 Found ${Object.keys(userRatingCounts).length} other contributors with ${totalOtherRatings} total ratings`);
-
-    if (totalOtherRatings > 0) {
-      Object.entries(userRatingCounts).forEach(([userId, ratingCount]) => {
-        const proportion = ratingCount / totalOtherRatings;
-        const payoutAmount = otherContributorsShare * proportion;
-
-        contributorPayouts.push({
-          user_id: userId,
-          payout_amount: payoutAmount,
-          rating_count: ratingCount,
-          is_top_contributor: false,
-        });
-      });
-    }
   }
 
   if (contributorPayouts.length > 0) {
@@ -141,7 +210,7 @@ async function processRevenueSharing(
       user_id: payout.user_id,
       payout_amount: payout.payout_amount,
       rating_count: payout.rating_count,
-      is_top_contributor: payout.is_top_contributor,
+      is_top_contributor: payout.rank === 1,
       status: 'pending',
     }));
 
@@ -155,8 +224,9 @@ async function processRevenueSharing(
     }
 
     console.log(`✅ Created ${contributorPayouts.length} contributor payout records`);
+    const rankEmojis = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'];
     contributorPayouts.forEach(payout => {
-      console.log(`  - ${payout.user_id}: $${payout.payout_amount.toFixed(2)} (${payout.rating_count} ratings)${payout.is_top_contributor ? ' 👑 TOP' : ''}`);
+      console.log(`  - ${payout.user_id}: $${payout.payout_amount.toFixed(2)} (${payout.rating_count} ratings) ${rankEmojis[payout.rank - 1]}`);
     });
   } else {
     console.log('ℹ️ No contributors found for this property');
@@ -164,7 +234,7 @@ async function processRevenueSharing(
 }
 
 /**
- * Generate PDF report for a property
+ * Prepare report data and call Vercel PDF service
  */
 async function generatePDFReport(admin: any, propertyId: string): Promise<ArrayBuffer> {
   // Get property information
@@ -179,251 +249,259 @@ async function generatePDFReport(admin: any, propertyId: string): Promise<ArrayB
   }
 
   // Get report data
-  const { data: overallData } = await admin.rpc('get_overall_averages', {
-    property_id_param: propertyId
-  });
-
-  const { data: weeklyData } = await admin.rpc('get_weekly_averages', {
-    property_id_param: propertyId
-  });
-
   const { data: ratingLog } = await admin.rpc('get_rating_log', {
     property_id_param: propertyId
   });
 
-  // Clean all data
-  if (propertyData) {
-    propertyData.name = cleanText(propertyData.name);
-    propertyData.address = cleanText(propertyData.address);
-  }
+  console.log('Fetched rating log:', ratingLog?.length, 'records');
 
-  // Calculate overall averages from rating log
-  const allRatings = ratingLog || [];
-  const overallDataCalculated: any[] = [];
-  const attributes = ['noise', 'safety', 'cleanliness'];
+  // Process ratings into structured data
+  const allRatings: RatingData[] = (ratingLog || []) as RatingData[];
+  
+  // Calculate overall summary
+  const overallSummary: any[] = [];
+  const attributes = ['Quietness', 'Cleanliness', 'Safety'];
 
   attributes.forEach(attr => {
-    const attrRatings = allRatings.filter((r: any) => r.attribute === attr);
+    const attrRatings = allRatings.filter((r: any) => mapAttribute(r.attribute) === attr);
     if (attrRatings.length > 0) {
       const sum = attrRatings.reduce((total: number, r: any) => total + r.stars, 0);
       const avg = sum / attrRatings.length;
-      overallDataCalculated.push({
-        attribute: cleanText(attr),
-        avg_rating: Math.round(avg * 100) / 100,
-        rating_count: attrRatings.length
+      overallSummary.push({
+        attribute: attr,
+        avg: Math.round(avg * 100) / 100,
+        count: attrRatings.length
       });
     }
   });
 
-  // Generate PDF
-  const doc = new jsPDF();
-  let yPosition = 20;
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 20;
-  const contentWidth = pageWidth - (margin * 2);
-
-  const checkPageBreak = (spaceNeeded: number = 20) => {
-    if (yPosition + spaceNeeded > 270) {
-      doc.addPage();
-      yPosition = 20;
+  // Calculate monthly summary
+  const monthlyGrouped: Record<string, Record<string, number[]>> = {};
+  allRatings.forEach(r => {
+    const date = new Date(r.created_at);
+    const monthKey = `${date.toLocaleString('en-US', { month: 'long' })} ${date.getFullYear()}`;
+    if (!monthlyGrouped[monthKey]) monthlyGrouped[monthKey] = {};
+    const attr = mapAttribute(r.attribute);
+    if (!monthlyGrouped[monthKey][attr]) monthlyGrouped[monthKey][attr] = [];
+    monthlyGrouped[monthKey][attr].push(r.stars);
+  });
+  
+  const monthlySummary: any[] = [];
+  Object.keys(monthlyGrouped).sort((a, b) => {
+    const dateA = new Date(a);
+    const dateB = new Date(b);
+    return dateB.getTime() - dateA.getTime();
+  }).slice(0, 4).forEach(monthKey => {
+    const rows = attributes.map(attr => {
+      if (monthlyGrouped[monthKey][attr]) {
+        const avg = monthlyGrouped[monthKey][attr].reduce((a, b) => a + b, 0) / monthlyGrouped[monthKey][attr].length;
+        return {
+          attribute: attr,
+          avg: Math.round(avg * 100) / 100,
+          count: monthlyGrouped[monthKey][attr].length
+        };
+      }
+      return { attribute: attr, avg: null, count: 0 };
+    });
+    monthlySummary.push({ label: monthKey, rows });
+  });
+  
+  // Calculate daily trends
+  const dailyTrends = calculateDailyTrends(allRatings);
+  
+  // Calculate hourly trends
+  const hourlyTrends = calculateHourlyTrends(allRatings);
+  
+  // Group ratings by day for daily logs
+  const dailyLogs: Record<string, any[]> = {};
+  allRatings.forEach(r => {
+    const date = new Date(r.created_at).toISOString().split('T')[0];
+    if (!dailyLogs[date]) dailyLogs[date] = [];
+    dailyLogs[date].push(r);
+  });
+  
+  // Generate AI-level insights
+  const insights: string[] = [];
+  
+  // Analyze each attribute for consistent high/low ratings
+  attributes.forEach(attr => {
+    const attrRatings = allRatings.filter((r: any) => mapAttribute(r.attribute) === attr);
+    if (attrRatings.length >= 5) {
+      const avg = attrRatings.reduce((total: number, r: any) => total + r.stars, 0) / attrRatings.length;
+      
+      if (avg >= 4.0) {
+        insights.push(`${attr} consistently rates high (${avg.toFixed(1)}/5), indicating strong community satisfaction in this area.`);
+      } else if (avg <= 2.0) {
+        insights.push(`${attr} consistently rates low (${avg.toFixed(1)}/5), suggesting this may be an area of concern for the community.`);
+      }
     }
+  });
+  
+  // Analyze time-of-day patterns for each attribute
+  attributes.forEach(attr => {
+    const hourlyData: Record<number, number[]> = {};
+    allRatings.filter((r: any) => mapAttribute(r.attribute) === attr).forEach(r => {
+      const hour = new Date(r.created_at).getHours();
+      if (!hourlyData[hour]) hourlyData[hour] = [];
+      hourlyData[hour].push(r.stars);
+    });
+    
+    const hourlyAvgs = Object.entries(hourlyData).map(([hour, ratings]) => ({
+      hour: parseInt(hour),
+      avg: ratings.reduce((a, b) => a + b, 0) / ratings.length
+    }));
+    
+    if (hourlyAvgs.length >= 3) {
+      const maxHour = hourlyAvgs.reduce((max, curr) => curr.avg > max.avg ? curr : max);
+      const minHour = hourlyAvgs.reduce((min, curr) => curr.avg < min.avg ? curr : min);
+      
+      if (maxHour.avg - minHour.avg >= 1.0) {
+        const formatHour = (h: number) => {
+          const period = h >= 12 ? 'PM' : 'AM';
+          const hour12 = h % 12 || 12;
+          return `${hour12}:00 ${period}`;
+        };
+        
+        insights.push(`${attr} shows a notable pattern: highest at ${formatHour(maxHour.hour)} (${maxHour.avg.toFixed(1)}/5) and lowest at ${formatHour(minHour.hour)} (${minHour.avg.toFixed(1)}/5).`);
+      }
+    }
+  });
+  
+  // Analyze day-of-week patterns
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  attributes.forEach(attr => {
+    const dayData: Record<number, number[]> = {};
+    allRatings.filter((r: any) => mapAttribute(r.attribute) === attr).forEach(r => {
+      const day = new Date(r.created_at).getDay();
+      if (!dayData[day]) dayData[day] = [];
+      dayData[day].push(r.stars);
+    });
+    
+    const dayAvgs = Object.entries(dayData).map(([day, ratings]) => ({
+      day: parseInt(day),
+      avg: ratings.reduce((a, b) => a + b, 0) / ratings.length
+    }));
+    
+    if (dayAvgs.length >= 3) {
+      const maxDay = dayAvgs.reduce((max, curr) => curr.avg > max.avg ? curr : max);
+      const minDay = dayAvgs.reduce((min, curr) => curr.avg < min.avg ? curr : min);
+      
+      if (maxDay.avg - minDay.avg >= 0.8) {
+        insights.push(`${attr} ratings vary by day of week: ${dayNames[maxDay.day]}s average ${maxDay.avg.toFixed(1)}/5 while ${dayNames[minDay.day]}s average ${minDay.avg.toFixed(1)}/5.`);
+      }
+    }
+  });
+  
+  // Analyze monthly trends
+  attributes.forEach(attr => {
+    const attrByMonth = allRatings.filter((r: any) => mapAttribute(r.attribute) === attr);
+    if (attrByMonth.length >= 10) {
+      const monthlyData: Record<string, number[]> = {};
+      attrByMonth.forEach(r => {
+        const date = new Date(r.created_at);
+        const monthKey = `${date.getMonth()}-${date.getFullYear()}`;
+        if (!monthlyData[monthKey]) monthlyData[monthKey] = [];
+        monthlyData[monthKey].push(r.stars);
+      });
+      
+      if (Object.keys(monthlyData).length >= 2) {
+        const monthlyAvgs = Object.entries(monthlyData).map(([key, ratings]) => ({
+          month: key,
+          avg: ratings.reduce((a, b) => a + b, 0) / ratings.length
+        }));
+        
+        const maxMonth = monthlyAvgs.reduce((max, curr) => curr.avg > max.avg ? curr : max);
+        const minMonth = monthlyAvgs.reduce((min, curr) => curr.avg < min.avg ? curr : min);
+        
+        if (maxMonth.avg - minMonth.avg >= 1.0) {
+          insights.push(`${attr} shows monthly variation with ratings ranging from ${minMonth.avg.toFixed(1)}/5 to ${maxMonth.avg.toFixed(1)}/5 across different months.`);
+        }
+      }
+    }
+  });
+  
+  // Default insights if none generated
+  if (insights.length === 0) {
+    insights.push('This property has received community ratings across multiple attributes.');
+    insights.push('More ratings over time will reveal clearer patterns and trends.');
+  }
+  
+  // Prepare data for Vercel API
+  const reportData = {
+    property: propertyData,
+    insights,
+    overallSummary,
+    monthlySummary,
+    dailyTrends,
+    hourlyTrends,
+    dailyLogs: Object.keys(dailyLogs).sort().reverse().slice(0, 15).map(date => ({
+      date,
+      rows: dailyLogs[date].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    }))
   };
-
-  // Title
-  doc.setFontSize(24);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 122, 255);
-  doc.text('Property Rating Report', margin, yPosition);
-  yPosition += 15;
-
-  // Generation date
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(108, 117, 125);
-  const now = new Date();
-  doc.text(`Generated on ${now.toLocaleDateString()} at ${now.toLocaleTimeString()}`, margin, yPosition);
-  yPosition += 20;
-
-  // Property Information
-  checkPageBreak(40);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 122, 255);
-  doc.text('Property Information', margin, yPosition);
-  yPosition += 10;
-
-  doc.setDrawColor(0, 122, 255);
-  doc.setFillColor(248, 249, 250);
-  doc.roundedRect(margin, yPosition, contentWidth, 25, 3, 3, 'FD');
-
-  yPosition += 8;
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(33, 37, 41);
-  doc.text(`Name: ${propertyData.name}`, margin + 5, yPosition);
-  yPosition += 6;
-  doc.text(`Address: ${propertyData.address}`, margin + 5, yPosition);
-  yPosition += 6;
-  doc.text(`Coordinates: ${propertyData.lat.toFixed(6)}, ${propertyData.lng.toFixed(6)}`, margin + 5, yPosition);
-  yPosition += 20;
-
-  // Overall Rating Summary
-  checkPageBreak(60);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 122, 255);
-  doc.text('Overall Rating Summary', margin, yPosition);
-  yPosition += 15;
-
-  if (overallDataCalculated.length > 0) {
-    const cardWidth = (contentWidth - 20) / 3;
-    let xPos = margin;
-
-    overallDataCalculated.forEach((rating: any) => {
-      doc.setDrawColor(233, 236, 239);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(xPos, yPosition, cardWidth, 30, 2, 2, 'FD');
-
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(73, 80, 87);
-      const attrText = cleanText(rating.attribute.charAt(0).toUpperCase() + rating.attribute.slice(1));
-      doc.text(attrText, xPos + cardWidth / 2, yPosition + 8, { align: 'center' });
-
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 122, 255);
-      doc.text(`${rating.avg_rating} stars`, xPos + cardWidth / 2, yPosition + 18, { align: 'center' });
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(108, 117, 125);
-      doc.text(`${rating.rating_count} ratings`, xPos + cardWidth / 2, yPosition + 25, { align: 'center' });
-
-      xPos += cardWidth + 10;
-    });
-    yPosition += 40;
-  } else {
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(108, 117, 125);
-    doc.text('No ratings available for this property', margin, yPosition);
-    yPosition += 20;
+  
+  // Call Vercel PDF service
+  console.log('PDF_SERVICE_URL from env:', PDF_SERVICE_URL);
+  console.log('Calling Vercel PDF service...');
+  
+  if (!PDF_SERVICE_URL) {
+    throw new Error('PDF_SERVICE_URL environment variable is not set!');
   }
-
-  // Weekly Trends Table
-  checkPageBreak(80);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 122, 255);
-  doc.text('Weekly Trends (Last 8 Weeks)', margin, yPosition);
-  yPosition += 15;
-
-  if (weeklyData && weeklyData.length > 0) {
-    const weeklyGrouped = weeklyData.reduce((acc: any, item: any) => {
-      const weekKey = item.week_start;
-      if (!acc[weekKey]) {
-        acc[weekKey] = { week_start: weekKey, noise: null, safety: null, cleanliness: null };
-      }
-      const cleanAttribute = cleanText(item.attribute);
-      acc[weekKey][cleanAttribute] = { avg_rating: item.avg_rating, rating_count: item.rating_count };
-      return acc;
-    }, {});
-
-    const weeks = Object.values(weeklyGrouped).sort((a: any, b: any) =>
-      new Date(b.week_start).getTime() - new Date(a.week_start).getTime()
-    );
-
-    // Table header
-    const colWidth = contentWidth / 4;
-    doc.setFillColor(0, 122, 255);
-    doc.setTextColor(255, 255, 255);
-    doc.rect(margin, yPosition, contentWidth, 8, 'F');
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Week Starting', margin + 2, yPosition + 5);
-    doc.text('Noise', margin + colWidth + 2, yPosition + 5);
-    doc.text('Safety', margin + colWidth * 2 + 2, yPosition + 5);
-    doc.text('Cleanliness', margin + colWidth * 3 + 2, yPosition + 5);
-    yPosition += 8;
-
-    // Table rows
-    weeks.slice(0, 10).forEach((week: any, index: number) => {
-      checkPageBreak(8);
-
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 249, 250);
-        doc.rect(margin, yPosition, contentWidth, 6, 'F');
-      }
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(33, 37, 41);
-
-      const weekDate = new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      doc.text(weekDate, margin + 2, yPosition + 4);
-      doc.text(week.noise ? `${week.noise.avg_rating}` : '-', margin + colWidth + 2, yPosition + 4);
-      doc.text(week.safety ? `${week.safety.avg_rating}` : '-', margin + colWidth * 2 + 2, yPosition + 4);
-      doc.text(week.cleanliness ? `${week.cleanliness.avg_rating}` : '-', margin + colWidth * 3 + 2, yPosition + 4);
-
-      yPosition += 6;
-    });
-    yPosition += 10;
-  } else {
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(108, 117, 125);
-    doc.text('No weekly trend data available', margin, yPosition);
-    yPosition += 20;
+  
+  const pdfResponse = await fetch(PDF_SERVICE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(reportData)
+  });
+  
+  if (!pdfResponse.ok) {
+    const errorText = await pdfResponse.text();
+    console.error('PDF service error:', errorText);
+    throw new Error(`PDF service failed: ${pdfResponse.status}`);
   }
-
-  // Recent Rating Activity
-  checkPageBreak(40);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 122, 255);
-  doc.text('Recent Rating Activity', margin, yPosition);
-  yPosition += 15;
-
-  if (ratingLog && ratingLog.length > 0) {
-    const recentRatings = (ratingLog as any[]).slice(0, 20);
-    for (const rating of recentRatings) {
-      checkPageBreak(5);
-      const date = new Date(rating.created_at);
-      const logDate = date.toLocaleDateString();
-      const userHash = rating.user_hash || (rating.user_id ? rating.user_id.toString().substring(0, 8) : 'unknown');
-
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(33, 37, 41);
-      doc.text(`${logDate} - ${cleanText(rating.attribute)}: ${rating.stars} stars (User: ${userHash})`, margin, yPosition);
-      yPosition += 4;
+  
+  const pdfResult = await pdfResponse.json();
+  
+  console.log('PDF service response:', { 
+    success: pdfResult.success, 
+    haspdf: !!pdfResult.pdf,
+    pdfLength: pdfResult.pdf?.length,
+    size: pdfResult.size 
+  });
+  
+  if (!pdfResult.success || !pdfResult.pdf) {
+    throw new Error('PDF service did not return PDF data');
+  }
+  
+  console.log('PDF generated successfully, size:', pdfResult.size, 'bytes');
+  
+  // Convert base64 back to ArrayBuffer
+  try {
+    const pdfBase64 = pdfResult.pdf;
+    
+    // Validate base64 string
+    if (typeof pdfBase64 !== 'string') {
+      throw new Error(`PDF is not a string, got ${typeof pdfBase64}`);
     }
-    yPosition += 15;
-  } else {
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(108, 117, 125);
-    doc.text('No rating history available', margin, yPosition);
-    yPosition += 20;
+    
+    console.log('Decoding base64 PDF, length:', pdfBase64.length);
+    const binaryString = atob(pdfBase64);
+    
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    console.log('Successfully converted PDF to ArrayBuffer');
+    return bytes.buffer;
+  } catch (error) {
+    console.error('Error converting PDF:', error);
+    console.error('PDF data type:', typeof pdfResult.pdf);
+    console.error('PDF preview:', pdfResult.pdf?.toString().substring(0, 100));
+    throw new Error(`Failed to convert PDF: ${error.message}`);
   }
-
-  // Footer
-  checkPageBreak(20);
-  doc.setDrawColor(233, 236, 239);
-  doc.line(margin, yPosition, pageWidth - margin, yPosition);
-  yPosition += 10;
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(108, 117, 125);
-  doc.text('This report was generated automatically by the Property Ratings System.', margin, yPosition);
-  yPosition += 4;
-  doc.text(`Report ID: ${propertyId} | Generated: ${new Date().toISOString()}`, margin, yPosition);
-
-  // Return PDF as ArrayBuffer
-  return doc.output('arraybuffer');
 }
 
 Deno.serve(async (req) => {
@@ -463,10 +541,36 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Calculate total credits required based on submission counts for all properties
+    let totalCreditsRequired = 0;
+    const propertyCreditsMap: { [key: string]: { creditsRequired: number; submissionCount: number } } = {};
+
+    for (const propertyId of propertyIds) {
+      // Get submission count for this property
+      const { count: submissionCount, error: countError } = await admin
+        .from('rating')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', propertyId);
+
+      if (countError) {
+        console.error(`Error counting ratings for property ${propertyId}:`, countError);
+      }
+
+      const actualCount = submissionCount || 0;
+      const creditsRequired = calculateCreditsRequired(actualCount);
+      
+      propertyCreditsMap[propertyId] = { creditsRequired, submissionCount: actualCount };
+      totalCreditsRequired += creditsRequired;
+
+      console.log(`📊 Property ${propertyId}: ${actualCount} submissions → ${creditsRequired} credit(s) required`);
+    }
+
+    console.log(`💳 Total credits required: ${totalCreditsRequired}`);
+
     // Debit credits
     const { data: ok, error: debitErr } = await admin.rpc("debit_credits", {
       p_user: user.id,
-      p_amount: propertyIds.length,
+      p_amount: totalCreditsRequired,
     });
 
     if (debitErr) {
@@ -478,7 +582,7 @@ Deno.serve(async (req) => {
     }
 
     if (!ok) {
-      return new Response(JSON.stringify({ error: "INSUFFICIENT_CREDITS" }), {
+      return new Response(JSON.stringify({ error: "INSUFFICIENT_CREDITS", required: totalCreditsRequired }), {
         status: 402,
         headers: { "Content-Type": "application/json" }
       });
@@ -500,14 +604,13 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Generate PDF
+      // Generate PDF via Vercel service
       const pdfBuffer = await generatePDFReport(admin, propertyId);
 
-      // Format address: remove comma between number and street
+      // Format address
       const formatAddress = (addr: string) => {
         const parts = addr.split(',').map(p => p.trim());
         if (parts.length >= 3) {
-          // Extract city and state/zip
           const city = parts[parts.length - 2] || '';
           const stateZip = parts[parts.length - 1] || '';
           return `${city}, ${stateZip}`;
@@ -516,6 +619,7 @@ Deno.serve(async (req) => {
       };
       
       const formattedAddress = formatAddress(propertyData.address);
+      const cleanName = propertyData.name.replace(/[^a-zA-Z0-9]/g, '-');
       
       // Send email with PDF attachment
       const emailResponse = await fetch('https://api.resend.com/emails', {
@@ -527,32 +631,34 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           from: `Leadsong Reports <${FROM_EMAIL}>`,
           to: [toEmail],
-          subject: `Your Leadsong Report for ${cleanText(propertyData.name)}`,
+          subject: `Your Community Observation Report for ${propertyData.name}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #007AFF;">Your Leadsong Report is Ready!</h1>
+              <h1 style="color: #007AFF;">Your Community Observation Report is Ready!</h1>
               
-              <p>Dear user,</p>
+              <p>Hello!</p>
               
-              <p>Your Leadsong report for <strong>${cleanText(propertyData.name)}, ${cleanText(formattedAddress)}</strong> has been generated and is attached to this email as a PDF.</p>
+              <p>Your community observation report for <strong>${propertyData.name}, ${formattedAddress}</strong> has been generated and is attached to this email as a PDF.</p>
               
               <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <h3 style="margin-top: 0; color: #007AFF;">Property Details</h3>
-                <p><strong>Name:</strong> ${cleanText(propertyData.name)}</p>
-                <p><strong>Address:</strong> ${cleanText(formattedAddress)}</p>
+                <p><strong>Address:</strong> ${formattedAddress}</p>
                 <p><strong>Report Generated:</strong> ${new Date().toLocaleDateString()}</p>
               </div>
               
-              <p>The attached PDF report includes the property's:</p>
+              <p>The attached PDF report includes:</p>
               <ul>
-                <li>All-time average ratings</li>
-                <li>Monthly average ratings</li>
-                <li>Daily average ratings</li>
-                <li>Hourly ratings</li>
+                <li>Key insights about the property</li>
+                <li>Overall rating averages (Quietness, Cleanliness, Safety)</li>
+                <li>Monthly rating summaries</li>
+                <li>Daily and hourly rating trends with charts</li>
+                <li>Detailed daily logs of community observations</li>
               </ul>
               
-              <p>Best Regards,<br>
-              Leadsong Reports</p>
+              <p>If you have any questions about this report, please don't hesitate to contact us.</p>
+              
+              <p>Best regards,<br>
+              The Leadsong Team</p>
               
               <hr style="margin: 30px 0; border: none; border-top: 1px solid #e9ecef;">
               <p style="font-size: 12px; color: #6c757d;">
@@ -562,7 +668,7 @@ Deno.serve(async (req) => {
           `,
           attachments: [
             {
-              filename: `${cleanText(propertyData.name).replace(/[^a-zA-Z0-9]/g, '-')}-report.pdf`,
+              filename: `${cleanName}-report.pdf`,
               content: Array.from(new Uint8Array(pdfBuffer)),
               type: 'application/pdf'
             }
@@ -579,14 +685,20 @@ Deno.serve(async (req) => {
       const emailResult = await emailResponse.json();
       console.log(`✅ PDF email sent successfully! ID: ${emailResult.id}`);
 
+      // Get credits and revenue for this property
+      const { creditsRequired, submissionCount } = propertyCreditsMap[propertyId];
+      const revenueValue = calculateRevenue(creditsRequired);
+
+      console.log(`💰 Property ${propertyId}: ${submissionCount} submissions → ${creditsRequired} credits → $${revenueValue} revenue`);
+
       // Create redemption record and process revenue sharing
       const { data: redemption, error: redemptionError } = await admin
         .from("report_redemption")
         .insert({
           user_id: user.id,
           property_id: propertyId,
-          credits_used: 1,
-          revenue_value: REVENUE_PER_CREDIT
+          credits_used: creditsRequired,
+          revenue_value: revenueValue
         })
         .select()
         .single();
@@ -598,7 +710,7 @@ Deno.serve(async (req) => {
 
         // Process revenue sharing
         try {
-          await processRevenueSharing(admin, redemption.id, propertyId, REVENUE_PER_CREDIT);
+          await processRevenueSharing(admin, redemption.id, propertyId, revenueValue);
         } catch (revenueError) {
           console.error("Revenue sharing error:", revenueError);
         }

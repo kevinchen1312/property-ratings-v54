@@ -17,10 +17,10 @@ INSERT INTO revenue_distribution (
   gen_random_uuid(), -- fake purchase_id
   (SELECT id FROM property LIMIT 1), -- use any property
   10.00, -- $10 report purchase
-  8.00,  -- 80% platform share
-  1.00,  -- 10% top contributor
-  1.00,  -- 10% other contributors
-  (SELECT id FROM auth.users LIMIT 1) -- your user as top contributor
+  2.00,  -- 20% platform share
+  5.00,  -- 50% gold contributor
+  3.00,  -- 30% silver + bronze (20% + 10%)
+  (SELECT id FROM auth.users LIMIT 1) -- your user as gold contributor
 ) RETURNING id, total_revenue;
 
 -- Create test contributor payouts for your user
@@ -32,21 +32,30 @@ INSERT INTO contributor_payouts (
   is_top_contributor,
   status
 ) VALUES 
--- Top contributor payout ($1.00)
+-- Gold contributor payout ($5.00 - 50%)
+(
+  (SELECT id FROM revenue_distribution ORDER BY created_at DESC LIMIT 1),
+  (SELECT id FROM auth.users LIMIT 1),
+  5.00,
+  15,
+  true,
+  'pending'
+),
+-- Silver contributor payout ($2.00 - 20%)
+(
+  (SELECT id FROM revenue_distribution ORDER BY created_at DESC LIMIT 1),
+  (SELECT id FROM auth.users LIMIT 1),
+  2.00,
+  10,
+  false,
+  'pending'
+),
+-- Bronze contributor payout ($1.00 - 10%)
 (
   (SELECT id FROM revenue_distribution ORDER BY created_at DESC LIMIT 1),
   (SELECT id FROM auth.users LIMIT 1),
   1.00,
   5,
-  true,
-  'pending'
-),
--- Regular contributor payout ($0.50)
-(
-  (SELECT id FROM revenue_distribution ORDER BY created_at DESC LIMIT 1),
-  (SELECT id FROM auth.users LIMIT 1),
-  0.50,
-  2,
   false,
   'pending'
 );

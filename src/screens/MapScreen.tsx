@@ -32,10 +32,10 @@ const { width, height } = Dimensions.get('window');
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Map'>;
 
 interface MapScreenProps {
-  autoOrientEnabled: boolean;
+  // No props needed anymore - autoOrientEnabled is managed internally
 }
 
-export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
+export const MapScreen: React.FC<MapScreenProps> = () => {
   const navigation = useNavigation<NavigationProp>();
   const [location, setLocation] = useState<LatLng | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +70,9 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
 
   // Settings modal state
   const [settingsVisible, setSettingsVisible] = useState(false);
+  
+  // Auto-orient setting (managed internally)
+  const [autoOrientEnabled, setAutoOrientEnabled] = useState(true);
   
   // Earnings modal state
   const [earningsVisible, setEarningsVisible] = useState(false);
@@ -107,6 +110,21 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
       };
     }, [])
   );
+
+  // Load auto-orient setting from AsyncStorage on mount
+  useEffect(() => {
+    const loadAutoOrientSetting = async () => {
+      try {
+        const value = await AsyncStorage.getItem('autoOrientEnabled');
+        if (value !== null) {
+          setAutoOrientEnabled(value === 'true');
+        }
+      } catch (error) {
+        // Silently handle - use default value (true)
+      }
+    };
+    loadAutoOrientSetting();
+  }, []);
 
   // Load recently rated properties (within past hour) on mount
   useEffect(() => {
@@ -869,18 +887,6 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
           />
         </Animated.View>
       )}
-
-      {/* Floating Menu Button */}
-      <FloatingMenu
-        credits={userCredits}
-        onBuyCredits={() => setBuyCreditsVisible(true)}
-        onEarnings={() => setEarningsVisible(true)}
-        onAnalytics={() => setAnalyticsVisible(true)}
-        onRewards={() => setRewardsVisible(true)}
-        onSettings={() => setSettingsVisible(true)}
-        onMenuVisibilityChange={setMenuVisible}
-        isScreenFocused={isMapFocused}
-      />
       
       <ClusteredMapView
         properties={[]} // Empty array - properties loaded dynamically
@@ -1190,13 +1196,10 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
                   value={autoOrientEnabled}
                   onValueChange={async (value) => {
                     try {
+                      // Update state immediately for instant effect
+                      setAutoOrientEnabled(value);
+                      // Save to AsyncStorage for persistence
                       await AsyncStorage.setItem('autoOrientEnabled', value.toString());
-                      // Reload app is needed for this change, so inform user
-                      Alert.alert(
-                        'Setting Updated',
-                        'Auto-orient will take effect when you restart the app.',
-                        [{ text: 'OK' }]
-                      );
                     } catch (error) {
                       Alert.alert('Error', 'Failed to save setting');
                     }
@@ -1261,6 +1264,33 @@ export const MapScreen: React.FC<MapScreenProps> = ({ autoOrientEnabled }) => {
       <BuyCreditsScreen
         visible={buyCreditsVisible}
         onClose={() => setBuyCreditsVisible(false)}
+      />
+
+      {/* Floating Menu Button - Rendered last for highest z-index */}
+      <FloatingMenu
+        credits={userCredits}
+        onBuyCredits={() => {
+          console.log('MapScreen: Buy Credits pressed');
+          setBuyCreditsVisible(true);
+        }}
+        onEarnings={() => {
+          console.log('MapScreen: Earnings pressed');
+          setEarningsVisible(true);
+        }}
+        onAnalytics={() => {
+          console.log('MapScreen: Analytics pressed');
+          setAnalyticsVisible(true);
+        }}
+        onRewards={() => {
+          console.log('MapScreen: Rewards pressed');
+          setRewardsVisible(true);
+        }}
+        onSettings={() => {
+          console.log('MapScreen: Settings pressed');
+          setSettingsVisible(true);
+        }}
+        onMenuVisibilityChange={setMenuVisible}
+        isScreenFocused={isMapFocused}
       />
     </View>
   );

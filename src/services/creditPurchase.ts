@@ -18,33 +18,33 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     id: 'starter',
     name: 'Starter Pack',
     credits: 1,
-    price: 10.00,
-    pricePerCredit: 10.00,
+    price: 5.00,
+    pricePerCredit: 5.00,
     description: 'Perfect for trying out our reports'
   },
   {
     id: 'value',
     name: 'Value Pack',
-    credits: 5,
+    credits: 10,
     price: 45.00,
-    pricePerCredit: 9.00,
+    pricePerCredit: 4.50,
     popular: true,
     description: 'Most popular choice - save $5'
   },
   {
     id: 'pro',
     name: 'Pro Pack',
-    credits: 10,
+    credits: 20,
     price: 80.00,
-    pricePerCredit: 8.00,
+    pricePerCredit: 4.00,
     description: 'For serious property researchers - save $20'
   },
   {
     id: 'enterprise',
     name: 'Enterprise Pack',
-    credits: 25,
+    credits: 50,
     price: 175.00,
-    pricePerCredit: 7.00,
+    pricePerCredit: 3.50,
     description: 'Best value for bulk purchases - save $75'
   }
 ];

@@ -41,27 +41,27 @@ const CREDIT_PACKAGES: CreditPackage[] = [
     id: 'starter',
     name: 'Starter Pack',
     credits: 1,
-    price: 10.00,
+    price: 5.00,
     description: 'Perfect for trying out our reports'
   },
   {
     id: 'value',
     name: 'Value Pack',
-    credits: 5,
+    credits: 10,
     price: 45.00,
     description: 'Most popular choice - save $5'
   },
   {
     id: 'pro',
     name: 'Pro Pack',
-    credits: 10,
+    credits: 20,
     price: 80.00,
     description: 'For serious property researchers - save $20'
   },
   {
     id: 'enterprise',
     name: 'Enterprise Pack',
-    credits: 25,
+    credits: 50,
     price: 175.00,
     description: 'Best value for bulk purchases - save $75'
   }

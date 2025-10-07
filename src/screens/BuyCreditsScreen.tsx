@@ -150,7 +150,7 @@ export const BuyCreditsScreen: React.FC<BuyCreditsScreenProps> = ({ visible, onC
               <View style={[styles.infoContainer, { width: '100%', margin: 0, marginTop: 8 }]}>
                 <Text style={styles.infoTitle}>Credit system explained</Text>
                 <Text style={styles.infoText}>
-                  • Each property report costs 1 credit{'\n'}
+                  • Property reports cost 1-4 credits based on the amount of ratings{'\n'}
                   • Credits never expire{'\n'}
                   • Secure payment via Stripe on leadsong.com{'\n'}
                   • After paying, close the browser and return here{'\n'}

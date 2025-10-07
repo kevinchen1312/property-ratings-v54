@@ -141,9 +141,9 @@ A complete Stripe Connect integration that allows contributors (raters) to:
 
 1. **Automatic Revenue Sharing** ⚙️
    - Webhook receives purchase confirmation
-   - Revenue split: 70% platform, 30% contributors
-   - Top contributor gets 15%, others share 15%
-   - Payout records created automatically
+   - Revenue split: 50% gold, 20% silver, 10% bronze, 20% platform
+   - Gold (🥇) gets 50%, Silver (🥈) gets 20%, Bronze (🥉) gets 10%
+   - Payout records created automatically for top 3 contributors only
 
 2. **Minimal Management** 🎛️
    - Stripe handles KYC/verification
