@@ -3,8 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
-import { useFonts, BalsamiqSans_400Regular, BalsamiqSans_700Bold } from '@expo-google-fonts/balsamiq-sans';
+import { useFonts, Comfortaa_400Regular, Comfortaa_700Bold } from '@expo-google-fonts/comfortaa';
 import { RootNavigator } from './src/navigation';
 
 const linking = {
@@ -29,8 +30,8 @@ const linking = {
 
 export default function App() {
   const [fontsLoaded] = useFonts({
-    BalsamiqSans_400Regular,
-    BalsamiqSans_700Bold,
+    Comfortaa_400Regular,
+    Comfortaa_700Bold,
   });
 
   if (!fontsLoaded) {
@@ -42,11 +43,13 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer linking={linking}>
-        <StatusBar style="light" />
-        <RootNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <NavigationContainer linking={linking}>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,7 +1,7 @@
 // Global style configuration
 export const GlobalFonts = {
-  regular: 'BalsamiqSans_400Regular',
-  bold: 'BalsamiqSans_700Bold',
+  regular: 'Comfortaa_400Regular',
+  bold: 'Comfortaa_700Bold',
 };
 
 // Default text style that can be spread into StyleSheet styles

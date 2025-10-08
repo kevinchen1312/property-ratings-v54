@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard, Switch, Animated } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Dimensions, Modal, ScrollView, ActivityIndicator, AppState, TextInput, FlatList, Keyboard, Switch, Animated, Platform, KeyboardAvoidingView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Location from 'expo-location';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Loading } from '../components/Loading';
@@ -66,6 +67,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
   const [searchResults, setSearchResults] = useState<Property[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const isDismissing = useRef(false);
   const keyboardHeight = useRef(new Animated.Value(30)).current;
 
   // Settings modal state
@@ -110,6 +113,36 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
       };
     }, [])
   );
+
+  // Swipe-down gesture to dismiss search keyboard
+  // Adjust sensitivity here:
+  // - translationY: minimum downward pixels (default: 12)
+  // - velocityY: minimum swipe speed pixels/sec (default: 800)
+  const handleDismissSearch = useCallback(() => {
+    if (isDismissing.current) return;
+    
+    isDismissing.current = true;
+    Keyboard.dismiss();
+    setShowSearchResults(false);
+    setIsSearchFocused(false);
+    
+    setTimeout(() => {
+      isDismissing.current = false;
+    }, 150);
+  }, []);
+
+  const swipeDownGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      if (event.translationY > 20 || event.velocityY > 1000) {
+        if (!isDismissing.current && isSearchFocused) {
+          handleDismissSearch();
+        }
+      }
+    })
+    .minDistance(15)
+    .activeOffsetY([15, 9999])
+    .failOffsetY(-10)
+    .simultaneousWithExternalGesture();
 
   // Load auto-orient setting from AsyncStorage on mount
   useEffect(() => {
@@ -290,6 +323,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
     setShowSearchResults(false);
     setSearchQuery('');
     setSearchResults([]);
+    setIsSearchFocused(false);
   }, []);
 
   // Handle selecting a search result
@@ -298,6 +332,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
     setShowSearchResults(false);
     setSearchQuery('');
     setSearchResults([]);
+    setIsSearchFocused(false);
     Keyboard.dismiss();
 
     // Zoom to the property
@@ -790,6 +825,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           placeholder="Search any address to find a Leadalbum..."
           value={searchQuery}
           onChangeText={handleSearch}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           autoCapitalize="none"
           autoCorrect={false}
           clearButtonMode="while-editing"
@@ -798,6 +835,16 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           <ActivityIndicator style={styles.searchLoader} size="small" color="#7C3AED" />
         )}
       </Animated.View>
+      
+      {/* Swipe-down gesture overlay when keyboard is visible */}
+      {isSearchFocused && (
+        <GestureDetector gesture={swipeDownGesture}>
+          <Animated.View style={[styles.swipeOverlay, { 
+            bottom: 0,
+            height: Animated.add(keyboardHeight, 60)
+          }]} />
+        </GestureDetector>
+      )}
 
       {/* Search Results Dropdown */}
       {showSearchResults && searchResults.length > 0 && (
@@ -1708,6 +1755,13 @@ const styles = StyleSheet.create({
   },
   centerButtonText: {
     fontSize: 28,
+  },
+  swipeOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    backgroundColor: 'transparent',
   },
   searchContainer: {
     position: 'absolute',

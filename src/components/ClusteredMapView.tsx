@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import MapView, { Marker, Region, Circle } from 'react-native-maps';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Location from 'expo-location';
 import Supercluster from 'supercluster';
 import { Property } from '../lib/types';
@@ -131,6 +132,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
   // Device heading for initial and continuous orientation
   const [initialHeading, setInitialHeading] = useState<number>(0);
   const [currentHeading, setCurrentHeading] = useState<number>(0);
+  const [mapHeading, setMapHeading] = useState<number>(0);
   const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const hasManuallyRotatedRef = useRef<boolean>(false);
   const hasInitializedCameraRef = useRef<boolean>(false);
@@ -191,6 +193,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
         const deviceHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
         setInitialHeading(deviceHeading);
         setCurrentHeading(deviceHeading);
+        setMapHeading(deviceHeading);
         console.log(`🧭 Initial heading: ${deviceHeading}°`);
 
         // Automatically center on user location with device heading when first loaded
@@ -355,6 +358,7 @@ export const ClusteredMapView = React.forwardRef<MapView, ClusteredMapViewProps>
       }
       
       // Animate camera to user location with fresh device heading
+      setMapHeading(headingToUse); // Update map heading state
       mapRef.current.animateCamera({
         center: {
           latitude: userLocation.latitude,

@@ -8,6 +8,7 @@ import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
 import { PurchaseSuccessScreen } from '../screens/PurchaseSuccessScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { CreditsScreen } from '../screens/CreditsScreen';
+import { SearchDemoScreen } from '../screens/SearchDemoScreen';
 import { getInitialSession, onAuthStateChange } from '../lib/auth';
 import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   };
   Profile: undefined;
   Credits: undefined;
+  SearchDemo: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -114,6 +116,21 @@ export const RootNavigator: React.FC = () => {
             component={CreditsScreen}
             options={{
               title: 'My Credits',
+              headerStyle: {
+                backgroundColor: '#007AFF',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+                fontFamily: GlobalFonts.bold,
+              },
+            }}
+          />
+          <Stack.Screen
+            name="SearchDemo"
+            component={SearchDemoScreen}
+            options={{
+              title: 'Search Demo',
               headerStyle: {
                 backgroundColor: '#007AFF',
               },

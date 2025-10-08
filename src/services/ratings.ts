@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
+import { generateDeviceFingerprint, isHighRiskDevice } from '../lib/deviceAttestation';
 
 export interface RatingSubmission {
   propertyId: string;
@@ -175,10 +176,97 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
     userId: userId
   });
   
-  const { data, error } = await supabase
-    .from('rating')
-    .insert(ratings)
-    .select();
+  // 🆕 NEW: Submit through anti-spoofing endpoint for trust scoring
+  // Set to true to enable anti-spoofing trust scoring
+  const USE_EDGE_FUNCTION = true;
+  
+  let data, error;
+  
+  if (USE_EDGE_FUNCTION) {
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://oyphcjbickujybvbeame.supabase.co';
+      console.log('🌐 Calling Edge Function:', `${supabaseUrl}/functions/v1/submit-rating-legacy`);
+      
+      // Collect device fingerprint for attestation
+      let deviceFingerprint = null;
+      try {
+        deviceFingerprint = await generateDeviceFingerprint();
+        console.log('✅ Device fingerprint collected:', {
+          platform: deviceFingerprint.platform,
+          isDevice: deviceFingerprint.isDevice,
+          isEmulator: deviceFingerprint.isEmulator,
+          model: deviceFingerprint.modelName,
+        });
+        
+        // Warn if high-risk device detected
+        if (isHighRiskDevice(deviceFingerprint)) {
+          console.warn('⚠️ High-risk device detected');
+        }
+      } catch (fpError) {
+        console.error('❌ Failed to collect device fingerprint:', fpError);
+      }
+      
+      const response = await fetch(
+      `${supabaseUrl}/functions/v1/submit-rating-legacy`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          property_id: submission.propertyId,
+          ratings: ratings.map(r => ({
+            attribute: r.attribute,
+            stars: r.stars
+          })),
+          lat: submission.userLat,
+          lng: submission.userLng,
+          accuracy: 15,
+          timestamp: Date.now(),
+          device_context: deviceFingerprint || {
+            platform: Platform.OS
+          }
+        })
+      }
+    );
+
+    const result = await response.json();
+    
+    console.log('🔍 Edge Function response:', { 
+      status: response.status, 
+      result 
+    });
+
+    if (!response.ok) {
+      console.error('❌ Edge Function error:', result);
+      error = { message: result.error || 'Submission failed', code: response.status.toString() };
+      data = null;
+    } else {
+      console.log('✅ Submitted with trust score:', result.trust_score);
+      if (result.flags && result.flags.length > 0) {
+        console.warn('⚠️ Fraud flags detected:', result.flags);
+      }
+      data = result;
+      error = null;
+    }
+  } catch (fetchError: any) {
+    console.error('❌ Fetch error:', fetchError);
+    console.error('❌ Fetch error details:', JSON.stringify(fetchError));
+    error = { message: fetchError.message || 'Network error', code: 'FETCH_ERROR' };
+    data = null;
+  }
+  } else {
+    // Direct database insert (original code)
+    console.log('📝 Using direct database insert...');
+    const result = await supabase
+      .from('rating')
+      .insert(ratings)
+      .select();
+    
+    data = result.data;
+    error = result.error;
+  }
 
   console.log('📊 Insert result:', { data, error });
   console.log('🔍 Detailed error info:', {
