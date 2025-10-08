@@ -9,6 +9,7 @@ export interface RatingSubmission {
   cleanliness: number;
   userLat: number;
   userLng: number;
+  accuracy?: number; // GPS accuracy in meters
 }
 
 /**
@@ -197,6 +198,7 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
           isEmulator: deviceFingerprint.isEmulator,
           model: deviceFingerprint.modelName,
         });
+        console.log('📍 GPS accuracy:', submission.accuracy ? `${submission.accuracy}m` : 'not available');
         
         // Warn if high-risk device detected
         if (isHighRiskDevice(deviceFingerprint)) {
@@ -222,7 +224,7 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
           })),
           lat: submission.userLat,
           lng: submission.userLng,
-          accuracy: 15,
+          accuracy: submission.accuracy || 999, // Use real accuracy or 999 if unavailable
           timestamp: Date.now(),
           device_context: deviceFingerprint || {
             platform: Platform.OS

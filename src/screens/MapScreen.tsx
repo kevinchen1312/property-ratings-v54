@@ -479,17 +479,23 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
   const handleSubmitRatings = useCallback(async () => {
     if (!selectedProperty || !location) return;
 
-    const submission: RatingSubmission = {
-      propertyId: selectedProperty.id,
-      safety: ratings.safety,
-      quietness: ratings.quietness,
-      cleanliness: ratings.cleanliness,
-      userLat: location.latitude,
-      userLng: location.longitude,
-    };
-
     setSubmitting(true);
     try {
+      // Get fresh location with accuracy at submission time
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation, // Use highest accuracy for submission
+      });
+
+      const submission: RatingSubmission = {
+        propertyId: selectedProperty.id,
+        safety: ratings.safety,
+        quietness: ratings.quietness,
+        cleanliness: ratings.cleanliness,
+        userLat: currentLocation.coords.latitude,
+        userLng: currentLocation.coords.longitude,
+        accuracy: currentLocation.coords.accuracy ?? undefined, // Real GPS accuracy!
+      };
+
       await submitRatings(submission);
       
       // Add property to rated set (turns pin gray)
