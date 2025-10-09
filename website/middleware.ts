@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           response = NextResponse.next({
@@ -37,8 +37,11 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session if expired
-  await supabase.auth.getUser();
+  // Refresh session if expired - this ensures cookies are always fresh
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // If no user and trying to access protected routes, let the page handle redirect
+  // The middleware should only refresh tokens, not block requests
 
   return response;
 }

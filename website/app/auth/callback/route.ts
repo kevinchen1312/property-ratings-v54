@@ -13,23 +13,29 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get('next') || '/credits';
 
   if (code) {
-    const cookieStore = request.cookies;
+    const response = NextResponse.redirect(new URL(next, request.url));
+    
     const supabase = createServerClient(
       supabaseConfig.url,
       supabaseConfig.anonKey,
       {
         cookies: {
           getAll() {
-            return cookieStore.getAll();
+            return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
-            // Not used in this context but required by the interface
+            // Set cookies on the response object to ensure they're properly sent
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            );
           },
         },
       }
     );
 
     await supabase.auth.exchangeCodeForSession(code);
+    
+    return response;
   }
 
   // Redirect to the page specified or default to /credits

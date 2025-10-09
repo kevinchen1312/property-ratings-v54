@@ -47,11 +47,19 @@ npm install
 
 ### 2. Set Up Environment Variables
 
-Copy `.env.example` to `.env.local`:
+Copy `.env.local.example` to `.env.local`:
 
 ```bash
-cp .env.example .env.local
+cp .env.local.example .env.local
 ```
+
+Then verify your environment is set up correctly:
+
+```bash
+node check-env.js
+```
+
+This will check that all required environment variables are present.
 
 Fill in the values:
 
@@ -363,10 +371,38 @@ website/
 - [ ] Monitor Stripe webhook deliveries
 - [ ] Set up error monitoring (Sentry, etc.)
 
+## 🔧 Troubleshooting
+
+### Login Issues
+
+If the login button doesn't work (form clears and blinks without error):
+
+1. **Check environment variables:**
+   ```bash
+   node check-env.js
+   ```
+
+2. **Open browser console** (F12 → Console tab) and look for error messages
+
+3. **Common fixes:**
+   - Ensure `.env.local` exists and has valid values
+   - Verify Supabase project is active (not paused)
+   - Check Supabase Auth settings (enable email signups)
+   - Clear browser cookies and cache
+   - Try incognito/private browsing mode
+
+4. **View detailed troubleshooting guide:**
+   See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for comprehensive solutions
+
+### Webhook Testing
+
+See [docs/QUICK-REFERENCE.md](./docs/QUICK-REFERENCE.md) for webhook testing instructions.
+
 ## 📞 Support
 
 For questions or issues:
 - **Email**: support@leadsong.com
+- **Troubleshooting Guide**: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 - **Stripe Webhook Logs**: [Dashboard](https://dashboard.stripe.com/webhooks)
 - **Supabase Logs**: Project Dashboard → Logs
 
