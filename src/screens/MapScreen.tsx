@@ -77,6 +77,9 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
   // Auto-orient setting (managed internally)
   const [autoOrientEnabled, setAutoOrientEnabled] = useState(true);
   
+  // Notifications setting
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  
   // Earnings modal state
   const [earningsVisible, setEarningsVisible] = useState(false);
   
@@ -99,6 +102,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
     full_name: string;
     rating_count: number;
     rank: number;
+    isCurrentUser?: boolean;
   }>>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   
@@ -144,19 +148,44 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
     .failOffsetY(-10)
     .simultaneousWithExternalGesture();
 
-  // Load auto-orient setting from AsyncStorage on mount
+  // Format address for display
+  const formatAddress = (address: string) => {
+    // Remove comma between street number and street name
+    let formatted = address.replace(/^(\d+),\s*/, '$1 ');
+    
+    // Add state between city and zip code if missing
+    if (/,\s*[^,]+,\s*\d{5}(?!\d)/.test(formatted) && !/,\s*[A-Z]{2}\s*,\s*\d{5}/.test(formatted)) {
+      formatted = formatted.replace(/,\s*([^,]+),\s*(\d{5})/, ', $1, CA, $2');
+    }
+    
+    return formatted;
+  };
+
+  // Calculate credits required based on rating count
+  const calculateCreditsRequired = (ratingCount: number): number => {
+    if (ratingCount < 100) return 1;
+    if (ratingCount < 1000) return 2;
+    return 4;
+  };
+
+  // Load settings from AsyncStorage on mount
   useEffect(() => {
-    const loadAutoOrientSetting = async () => {
+    const loadSettings = async () => {
       try {
-        const value = await AsyncStorage.getItem('autoOrientEnabled');
-        if (value !== null) {
-          setAutoOrientEnabled(value === 'true');
+        const autoOrientValue = await AsyncStorage.getItem('autoOrientEnabled');
+        if (autoOrientValue !== null) {
+          setAutoOrientEnabled(autoOrientValue === 'true');
+        }
+        
+        const notificationsValue = await AsyncStorage.getItem('notificationsEnabled');
+        if (notificationsValue !== null) {
+          setNotificationsEnabled(notificationsValue === 'true');
         }
       } catch (error) {
-        // Silently handle - use default value (true)
+        // Silently handle - use default values
       }
     };
-    loadAutoOrientSetting();
+    loadSettings();
   }, []);
 
   // Load recently rated properties (within past hour) on mount
@@ -327,7 +356,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
   }, []);
 
   // Handle selecting a search result
-  const handleSelectSearchResult = useCallback((property: Property) => {
+  const handleSelectSearchResult = useCallback(async (property: Property) => {
     // Close search results
     setShowSearchResults(false);
     setSearchQuery('');
@@ -335,21 +364,46 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
     setIsSearchFocused(false);
     Keyboard.dismiss();
 
-    // Zoom to the property
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: property.lat,
-        longitude: property.lng,
-        latitudeDelta: 0.0015,
-        longitudeDelta: 0.0015,
-      }, 1000);
+    // If this is a new Google property, create it in the database first
+    let propertyToUse = property;
+    if (property.isNew && property.id.startsWith('google-')) {
+      try {
+        console.log('Creating new property from Google Places:', property.address);
+        const { createGoogleProperty } = await import('../services/properties');
+        const createdProperty = await createGoogleProperty(property);
+        propertyToUse = createdProperty;
+        console.log('Property created successfully:', createdProperty.id);
+      } catch (error) {
+        console.error('Failed to create property:', error);
+        // Continue with original property - user can still see it on map
+      }
     }
 
-    // Open the property details modal after a short delay
-    setTimeout(() => {
-      handleMarkerPress(property);
-    }, 1100);
-  }, [handleMarkerPress]);
+    // Zoom to the property using camera instead of region to preserve perspective
+    if (mapRef.current) {
+      try {
+        const currentCamera = await mapRef.current.getCamera();
+        await mapRef.current.animateCamera({
+          center: {
+            latitude: propertyToUse.lat,
+            longitude: propertyToUse.lng,
+          },
+          pitch: currentCamera.pitch || 0, // Preserve current pitch
+          heading: currentCamera.heading || 0, // Preserve current heading
+          altitude: currentCamera.altitude,
+          zoom: 18, // Street level zoom
+        }, { duration: 1000 });
+      } catch (error) {
+        // Fallback to animateToRegion if camera fails
+        mapRef.current.animateToRegion({
+          latitude: propertyToUse.lat,
+          longitude: propertyToUse.lng,
+          latitudeDelta: 0.0015,
+          longitudeDelta: 0.0015,
+        }, 1000);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -519,18 +573,29 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
   const fetchLeaderboard = useCallback(async (propertyId: string) => {
     setLoadingLeaderboard(true);
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUserId = user?.id;
+
       const { data, error } = await supabase
         .from('rating')
         .select(`
           user_id,
+          created_at,
           app_user!inner(full_name)
         `)
         .eq('property_id', propertyId);
 
       if (error) throw error;
 
-      // Count ratings per user
-      const userCounts: { [userId: string]: { full_name: string; count: number } } = {};
+      // Count submissions per user (group by user and minute timestamp)
+      const userSubmissions: { 
+        [userId: string]: { 
+          full_name: string; 
+          submissions: Set<string>;
+          isCurrentUser: boolean;
+        } 
+      } = {};
       
       if (data) {
         data.forEach((rating: any) => {
@@ -539,20 +604,29 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           // Sanitize username to censor profanity
           const fullName = sanitizeUsername(rawName);
           
-          if (!userCounts[userId]) {
-            userCounts[userId] = { full_name: fullName, count: 0 };
+          // Group by minute timestamp to identify unique submissions
+          const timestamp = new Date(rating.created_at);
+          const minuteKey = `${timestamp.getFullYear()}-${timestamp.getMonth()}-${timestamp.getDate()}-${timestamp.getHours()}-${timestamp.getMinutes()}`;
+          
+          if (!userSubmissions[userId]) {
+            userSubmissions[userId] = { 
+              full_name: fullName, 
+              submissions: new Set(),
+              isCurrentUser: userId === currentUserId
+            };
           }
-          userCounts[userId].count += 1;
+          userSubmissions[userId].submissions.add(minuteKey);
         });
       }
 
-      // Convert to array and sort by rating count
-      const leaderboard = Object.entries(userCounts)
+      // Convert to array and sort by submission count
+      const leaderboard = Object.entries(userSubmissions)
         .map(([userId, data]) => ({
           user_id: userId,
           full_name: data.full_name,
-          rating_count: data.count,
+          rating_count: data.submissions.size,
           rank: 0,
+          isCurrentUser: data.isCurrentUser
         }))
         .sort((a, b) => b.rating_count - a.rating_count)
         .map((entry, index) => ({ ...entry, rank: index + 1 }));
@@ -828,7 +902,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
       }]}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search any address to find a Leadalbum..."
+          placeholder="Search an address for a report..."
           value={searchQuery}
           onChangeText={handleSearch}
           onFocus={() => setIsSearchFocused(true)}
@@ -870,7 +944,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                 >
                   <View style={styles.searchResultTextContainer}>
                     <Text style={styles.searchResultName}>{item.name}</Text>
-                    <Text style={styles.searchResultAddress}>{item.address}</Text>
+                    <Text style={styles.searchResultAddress}>{formatAddress(item.address)}</Text>
                     {item.isNew ? (
                       <Text style={styles.searchResultNew}>
                         🌍 New location - 0 ratings
@@ -931,7 +1005,9 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                     }
                   }}
                 >
-                  <Text style={styles.searchResultButtonText}>📊 Buy (1cr)</Text>
+                  <Text style={styles.searchResultButtonText}>
+                    Exchange for{'\n'}{calculateCreditsRequired(item.rating_count || 0)} {calculateCreditsRequired(item.rating_count || 0) === 1 ? 'credit' : 'credits'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1198,7 +1274,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                           key={entry.user_id} 
                           style={[
                             styles.leaderboardItem,
-                            index < 3 && styles[`leaderboardTop${index + 1}` as 'leaderboardTop1' | 'leaderboardTop2' | 'leaderboardTop3']
+                            entry.isCurrentUser && styles.leaderboardCurrentUser
                           ]}
                         >
                           <View style={styles.leaderboardRank}>
@@ -1211,7 +1287,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                               {entry.full_name}
                             </Text>
                             <Text style={styles.leaderboardCount}>
-                              {entry.rating_count} {entry.rating_count === 1 ? 'rating' : 'ratings'}
+                              {entry.rating_count} {entry.rating_count === 1 ? 'submission' : 'submissions'}
                             </Text>
                           </View>
                         </View>
@@ -1253,6 +1329,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                       setAutoOrientEnabled(value);
                       // Save to AsyncStorage for persistence
                       await AsyncStorage.setItem('autoOrientEnabled', value.toString());
+                      console.log(`🧭 Auto-orient map ${value ? 'enabled' : 'disabled'}`);
                     } catch (error) {
                       Alert.alert('Error', 'Failed to save setting');
                     }
@@ -1262,7 +1339,92 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                   ios_backgroundColor="#d1d1d6"
                 />
               </View>
+              <Text style={styles.settingsDescription}>Automatically rotate the map based on your device orientation</Text>
             </View>
+
+            {/* Notifications Toggle */}
+            <View style={styles.settingsOption}>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingsOptionText}>Notifications</Text>
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={async (value) => {
+                    try {
+                      setNotificationsEnabled(value);
+                      await AsyncStorage.setItem('notificationsEnabled', value.toString());
+                      Alert.alert(
+                        'Notifications ' + (value ? 'Enabled' : 'Disabled'),
+                        value 
+                          ? 'You will receive notifications about rewards, earnings, and updates.' 
+                          : 'You will not receive notifications.'
+                      );
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to save setting');
+                    }
+                  }}
+                  trackColor={{ false: '#d1d1d6', true: '#7C3AED' }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#d1d1d6"
+                />
+              </View>
+              <Text style={styles.settingsDescription}>Receive notifications about rewards, earnings, and updates</Text>
+            </View>
+
+            {/* Delete Account Button */}
+            <TouchableOpacity 
+              style={[styles.settingsOption, styles.deleteAccountOption]} 
+              onPress={async () => {
+                setSettingsVisible(false);
+                Alert.alert(
+                  'Delete Account',
+                  'Are you sure you want to permanently delete your account?\n\n' +
+                  '⚠️ This action cannot be undone.\n\n' +
+                  'What will be deleted:\n' +
+                  '• Your email and personal information\n' +
+                  '• Your credits and pending rewards\n' +
+                  '• Your Stripe connection\n\n' +
+                  'What will be kept:\n' +
+                  '• Your ratings (anonymized for statistics)\n' +
+                  '• Completed payout records (for accounting)\n\n' +
+                  'Note: You will not be able to create a new account with the same email.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete Account',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          const { data: { user } } = await supabase.auth.getUser();
+                          if (!user) {
+                            Alert.alert('Error', 'Not authenticated');
+                            return;
+                          }
+
+                          // Delete user account (GDPR-compliant with fraud prevention)
+                          const { error } = await supabase.rpc('delete_user_account');
+                          
+                          if (error) {
+                            Alert.alert('Error', 'Failed to delete account: ' + error.message);
+                            return;
+                          }
+
+                          // Sign out after deletion
+                          await supabase.auth.signOut();
+                          Alert.alert(
+                            'Account Deleted', 
+                            'Your account and all personal information have been permanently deleted.'
+                          );
+                        } catch (error: any) {
+                          Alert.alert('Error', 'Failed to delete account: ' + error.message);
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.settingsOptionText, styles.deleteAccountText]}>Delete Account</Text>
+            </TouchableOpacity>
 
             {/* Sign Out Button */}
             <TouchableOpacity 
@@ -1310,7 +1472,12 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
       {/* Rewards Modal */}
       <RewardsScreen
         visible={rewardsVisible}
-        onClose={() => setRewardsVisible(false)}
+        onClose={async () => {
+          setRewardsVisible(false);
+          // Refresh credits after closing Rewards screen
+          const updatedCredits = await getUserCredits();
+          setUserCredits(updatedCredits);
+        }}
       />
 
       {/* Buy Credits Modal */}
@@ -1640,15 +1807,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  leaderboardTop1: {
-    backgroundColor: '#F5F0FF',
-    borderColor: '#7C3AED',
-  },
-  leaderboardTop2: {
-    backgroundColor: '#F5F5F5',
-    borderColor: '#C0C0C0',
-  },
-  leaderboardTop3: {
+  leaderboardCurrentUser: {
     backgroundColor: '#F5F0FF',
     borderColor: '#7C3AED',
   },
@@ -1742,6 +1901,14 @@ const styles = StyleSheet.create({
     fontFamily: GlobalFonts.regular,
     color: '#666',
     marginTop: 4,
+  },
+  deleteAccountOption: {
+    backgroundColor: '#ffebee',
+    borderWidth: 1,
+    borderColor: '#ef5350',
+  },
+  deleteAccountText: {
+    color: '#d32f2f',
   },
   centerButton: {
     position: 'absolute',
@@ -1854,13 +2021,17 @@ const styles = StyleSheet.create({
   searchResultButton: {
     backgroundColor: '#7C3AED',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
+    minWidth: 100,
+    maxWidth: 120,
   },
   searchResultButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     fontFamily: GlobalFonts.bold,
+    textAlign: 'center',
+    lineHeight: 14,
   },
 });
