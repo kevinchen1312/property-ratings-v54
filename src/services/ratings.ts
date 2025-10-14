@@ -179,7 +179,8 @@ export const submitRatings = async (submission: RatingSubmission): Promise<void>
   
   // 🆕 NEW: Submit through anti-spoofing endpoint for trust scoring
   // Set to true to enable anti-spoofing trust scoring
-  const USE_EDGE_FUNCTION = true;
+  // TEMPORARILY DISABLED: Edge Function can't verify custom Clerk JWT (HS256 vs RS256)
+  const USE_EDGE_FUNCTION = false;
   
   let data, error;
   

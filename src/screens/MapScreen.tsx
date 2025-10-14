@@ -1049,8 +1049,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           <MapView
             style={StyleSheet.absoluteFillObject}
             initialRegion={{
-              latitude: location.latitude,
-              longitude: location.longitude,
+              latitude: location!.latitude,
+              longitude: location!.longitude,
               latitudeDelta: 0.02,
               longitudeDelta: 0.02,
             }}
@@ -1062,8 +1062,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           >
             <Circle
               center={{
-                latitude: location.latitude,
-                longitude: location.longitude,
+                latitude: location!.latitude,
+                longitude: location!.longitude,
               }}
               radius={75} // 75 meters OSM proximity radius
               strokeColor="rgba(34, 197, 94, 0.6)" // Green color for user proximity
@@ -1080,8 +1080,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           <MapView
             style={StyleSheet.absoluteFillObject}
             initialRegion={{
-              latitude: selectedProperty.lat,
-              longitude: selectedProperty.lng,
+              latitude: selectedProperty!.lat,
+              longitude: selectedProperty!.lng,
               latitudeDelta: 0.02,
               longitudeDelta: 0.02,
             }}
@@ -1093,8 +1093,8 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
           >
             <Circle
               center={{
-                latitude: selectedProperty.lat,
-                longitude: selectedProperty.lng,
+                latitude: selectedProperty!.lat,
+                longitude: selectedProperty!.lng,
               }}
               radius={200} // 200 meters
               strokeColor="rgba(0, 122, 255, 0.5)"
@@ -1339,7 +1339,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                   ios_backgroundColor="#d1d1d6"
                 />
               </View>
-              <Text style={styles.settingsDescription}>Automatically rotate the map based on your device orientation</Text>
+              <Text style={styles.settingDescription}>Automatically rotate the map based on your device orientation</Text>
             </View>
 
             {/* Notifications Toggle */}
@@ -1367,7 +1367,7 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                   ios_backgroundColor="#d1d1d6"
                 />
               </View>
-              <Text style={styles.settingsDescription}>Receive notifications about rewards, earnings, and updates</Text>
+              <Text style={styles.settingDescription}>Receive notifications about rewards, earnings, and updates</Text>
             </View>
 
             {/* Delete Account Button */}
@@ -1440,9 +1440,19 @@ export const MapScreen: React.FC<MapScreenProps> = () => {
                       text: 'Sign Out',
                       style: 'destructive',
                       onPress: async () => {
-                        const { signOut } = await import('../lib/auth');
-                        const { error } = await signOut();
-                        if (error) {
+                        try {
+                          const { signOut } = await import('../lib/auth');
+                          const { useAuth } = await import('@clerk/clerk-expo');
+                          
+                          // Sign out from Supabase
+                          const { error } = await signOut();
+                          if (error) {
+                            console.error('Supabase sign out error:', error);
+                          }
+                          
+                          // Note: Clerk sign out will be handled by the auth state listener
+                        } catch (error) {
+                          console.error('Sign out error:', error);
                           Alert.alert('Error', 'Failed to sign out');
                         }
                       },

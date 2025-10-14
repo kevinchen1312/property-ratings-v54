@@ -9,12 +9,14 @@ import {
   Clipboard,
   ActivityIndicator,
 } from 'react-native';
+import { useAuth } from '@clerk/clerk-expo';
 import { GlobalFonts } from '../styles/global';
 import { getUserProfile, getReferralLink, getReferralStats } from '../lib/credits';
 import { signOut } from '../lib/auth';
 import type { UserProfile } from '../lib/credits';
 
 export const ProfileScreen: React.FC = () => {
+  const { signOut: clerkSignOut } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [referralStats, setReferralStats] = useState({ referralCount: 0, totalEarned: 0 });
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,13 @@ export const ProfileScreen: React.FC = () => {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await signOut();
+            try {
+              // Sign out from both Clerk and Supabase
+              await signOut(); // Supabase
+              await clerkSignOut(); // Clerk
+            } catch (error) {
+              console.error('Error signing out:', error);
+            }
           },
         },
       ]

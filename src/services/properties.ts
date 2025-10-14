@@ -232,7 +232,7 @@ export const searchProperties = async (searchTerm: string): Promise<Property[]> 
           };
         })
         .sort((a: any, b: any) => b._matchScore - a._matchScore) // Sort by best match first
-        .map(({_matchScore, ...prop}) => prop) // Remove score field
+        .map(({_matchScore, ...prop}: any) => prop) // Remove score field
         .slice(0, 20);
     }
   }
@@ -291,7 +291,7 @@ export const searchProperties = async (searchTerm: string): Promise<Property[]> 
         };
       })
       .sort((a: any, b: any) => b._matchScore - a._matchScore) // Best matches first
-      .map(({_matchScore, ...prop}) => prop) // Remove score field
+      .map(({_matchScore, ...prop}: any) => prop) // Remove score field
       .slice(0, 10);
 
     return worldwideResults;
@@ -458,6 +458,47 @@ export const getPropertiesOSMBased = async (
       return []; // Return empty array as last resort
     }
   }
+};
+
+/**
+ * Create a new property from Google Places data
+ * @param property Property data from Google Places
+ * @returns Promise<Property> The created property
+ */
+export const createGoogleProperty = async (property: Partial<Property> & { 
+  lat: number; 
+  lng: number; 
+  name: string; 
+  address: string;
+}): Promise<Property> => {
+  // Extract Google Place ID if present
+  const googlePlaceId = property.id?.startsWith('google-') 
+    ? property.id.replace('google-', '') 
+    : undefined;
+
+  // Insert the new property
+  const { data, error } = await supabase
+    .from('property')
+    .insert({
+      name: property.name,
+      address: property.address,
+      lat: property.lat,
+      lng: property.lng,
+      google_place_id: googlePlaceId,
+      osm_id: property.osm_id,
+    })
+    .select('id, name, address, lat, lng, created_at')
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create property: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error('Failed to create property: No data returned');
+  }
+
+  return data;
 };
 
 /**

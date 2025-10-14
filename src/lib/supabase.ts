@@ -14,3 +14,30 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce', // Use PKCE flow for mobile
   },
 });
+
+// CRITICAL: Patch Supabase auth methods to support Clerk sessions
+// This makes all existing services work with Clerk authentication
+const originalGetUser = supabase.auth.getUser.bind(supabase.auth);
+const originalGetSession = supabase.auth.getSession.bind(supabase.auth);
+
+(supabase.auth as any).getUser = async () => {
+  const clerkSession = (global as any).__clerkUserSession;
+  if (clerkSession?.user) {
+    return {
+      data: { user: clerkSession.user },
+      error: null,
+    };
+  }
+  return originalGetUser();
+};
+
+(supabase.auth as any).getSession = async () => {
+  const clerkSession = (global as any).__clerkUserSession;
+  if (clerkSession) {
+    return {
+      data: { session: clerkSession },
+      error: null,
+    };
+  }
+  return originalGetSession();
+};

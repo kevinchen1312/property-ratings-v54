@@ -1,18 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, AppState } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { MapScreen } from '../screens/MapScreen';
-import { AuthScreen } from '../screens/AuthScreen';
+import { ClerkAuthScreen } from '../screens/ClerkAuthScreen';
 import { ReportPreviewScreen } from '../screens/ReportPreviewScreen';
 import { EmailConfirmScreen } from '../screens/EmailConfirmScreen';
 import { PurchaseSuccessScreen } from '../screens/PurchaseSuccessScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { CreditsScreen } from '../screens/CreditsScreen';
 import { SearchDemoScreen } from '../screens/SearchDemoScreen';
-import { getInitialSession, onAuthStateChange } from '../lib/auth';
-import { Session } from '../lib/types';
 import { Loading } from '../components/Loading';
 import { GlobalFonts } from '../styles/global';
+import { useClerkSupabaseSync } from '../hooks/useClerkSupabaseSync';
 
 export type RootStackParamList = {
   Map: undefined;
@@ -33,47 +32,17 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Use Clerk-Supabase sync hook to manage authentication
+  const { supabaseSession, isLoading } = useClerkSupabaseSync();
 
-  useEffect(() => {
-    // Get initial session
-    getInitialSession().then((session) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = onAuthStateChange((session) => {
-      setSession(session);
-    });
-
-    // Restore session when app comes to foreground (after returning from browser)
-    const appStateListener = AppState.addEventListener('change', async (nextAppState) => {
-      if (nextAppState === 'active') {
-        console.log('App came to foreground, restoring session...');
-        const restoredSession = await getInitialSession();
-        if (restoredSession) {
-          setSession(restoredSession);
-          console.log('✅ Session restored');
-        }
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-      appStateListener.remove();
-    };
-  }, []);
-
-  if (loading) {
+  if (isLoading) {
     return <Loading />;
   }
 
   return (
     <>
     <Stack.Navigator>
-      {session ? (
+      {supabaseSession ? (
         <>
           <Stack.Screen
             name="Map"
@@ -146,7 +115,7 @@ export const RootNavigator: React.FC = () => {
         <>
           <Stack.Screen
             name="Auth"
-            component={AuthScreen}
+            component={ClerkAuthScreen}
             options={{
               headerShown: false,
             }}

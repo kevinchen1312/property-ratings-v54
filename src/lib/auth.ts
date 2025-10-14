@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Session } from './types';
+import * as SecureStore from 'expo-secure-store';
 
 export async function getInitialSession(): Promise<Session | null> {
   try {
@@ -51,8 +52,26 @@ export async function signIn(email: string, password: string) {
   return { data, error };
 }
 
+/**
+ * Sign out - works with both Clerk and legacy Supabase auth
+ */
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
+  // Clear Clerk session tokens from memory
+  (global as any).__supabaseClerkToken = null;
+  (global as any).__clerkUserSession = null;
+  
+  // Clear Clerk tokens from Expo Secure Store
+  try {
+    // Clerk stores tokens with the __clerk_client_jwt key
+    await SecureStore.deleteItemAsync('__clerk_client_jwt');
+    await SecureStore.deleteItemAsync('__clerk_session_token');
+    await SecureStore.deleteItemAsync('__clerk_refresh_token');
+    console.log('✅ Cleared Clerk tokens from Secure Store');
+  } catch (err) {
+    console.warn('Could not clear Clerk tokens:', err);
+  }
+  
   return { error };
 }
 
